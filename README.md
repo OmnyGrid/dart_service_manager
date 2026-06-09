@@ -1,8 +1,14 @@
 # dart_service_manager
 
-[![Dart](https://img.shields.io/badge/Dart-3.x-blue.svg)](https://dart.dev)
-[![Null safety](https://img.shields.io/badge/null--safety-sound-success.svg)](https://dart.dev/null-safety)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![pub package](https://img.shields.io/pub/v/dart_service_manager.svg?logo=dart&logoColor=00b9fc)](https://pub.dev/packages/dart_service_manager)
+[![Null Safety](https://img.shields.io/badge/null-safety-brightgreen)](https://dart.dev/null-safety)
+[![Dart CI](https://github.com/OmnyGrid/dart_service_manager/actions/workflows/dart.yml/badge.svg?branch=master)](https://github.com/OmnyGrid/dart_service_manager/actions/workflows/dart.yml)
+[![GitHub Tag](https://img.shields.io/github/v/tag/OmnyGrid/dart_service_manager?logo=git&logoColor=white)](https://github.com/OmnyGrid/dart_service_manager/releases)
+[![New Commits](https://img.shields.io/github/commits-since/OmnyGrid/dart_service_manager/latest?logo=git&logoColor=white)](https://github.com/OmnyGrid/dart_service_manager/network)
+[![Last Commits](https://img.shields.io/github/last-commit/OmnyGrid/dart_service_manager?logo=git&logoColor=white)](https://github.com/OmnyGrid/dart_service_manager/commits/master)
+[![Pull Requests](https://img.shields.io/github/issues-pr/OmnyGrid/dart_service_manager?logo=github&logoColor=white)](https://github.com/OmnyGrid/dart_service_manager/pulls)
+[![Code size](https://img.shields.io/github/languages/code-size/OmnyGrid/dart_service_manager?logo=github&logoColor=white)](https://github.com/OmnyGrid/dart_service_manager)
+[![License](https://img.shields.io/github/license/OmnyGrid/dart_service_manager?logo=open-source-initiative&logoColor=green)](https://github.com/OmnyGrid/dart_service_manager/blob/master/LICENSE)
 
 Declare services in a Dart package, compile them to native executables, and
 install and manage them as **native operating-system services** — on Linux
@@ -89,6 +95,15 @@ dart_services:
 
 See [`example/sample_package`](example/sample_package) for a runnable package.
 
+## Requirements
+
+- **Dart SDK 3.x** — required on the machine that installs services, since
+  entrypoints are compiled with `dart compile exe`.
+- **Privileges** — `ServiceScope.user` (the default) needs none; `system` scope
+  requires root (Linux/macOS) or Administrator (Windows).
+- **Per platform** — systemd (Linux), launchd (macOS) or the Service Control
+  Manager (Windows), all present by default on their respective OSes.
+
 ## Getting started
 
 ```yaml
@@ -166,7 +181,7 @@ Future<void> main() async {
 ### Core API
 
 ```dart
-Future<void> install(String package, {String? serviceName, ServiceScope scope, String? path});
+Future<void> install(String package, {String? serviceName, ServiceScope scope = ServiceScope.user, String? path, bool force = false});
 Future<void> uninstall(String package, {String? serviceName});
 Future<void> start(String package, String service);
 Future<void> stop(String package, String service);
@@ -184,8 +199,8 @@ default `DartServiceManager` constructor versus `DartServiceManager.forCurrentPl
 
 ## Where things are stored
 
-| | Registry & binaries |
-|---|---|
+| Platform | Registry & binaries |
+|----------|---------------------|
 | Linux | `$XDG_DATA_HOME` or `~/.local/share/dart_service_manager/` |
 | macOS | `~/Library/Application Support/dart_service_manager/` |
 | Windows | `%LOCALAPPDATA%\dart_service_manager\` |
@@ -213,6 +228,19 @@ Tests tagged `os-linux` / `os-macos` / `os-windows` drive a real init system and
 are skipped by default; run them explicitly on a matching host (e.g.
 `dart test -t os-macos`).
 
+## Contributing
+
+Issues and pull requests are welcome on
+[GitHub](https://github.com/OmnyGrid/dart_service_manager).
+
+# Author
+
+Graciliano M. Passos: [gmpassos@GitHub][github].
+
+[github]: https://github.com/gmpassos
+
 ## License
 
-Licensed under the Apache License 2.0 — see [LICENSE](LICENSE).
+[Apache License - Version 2.0][apache_license]
+
+[apache_license]: https://www.apache.org/licenses/LICENSE-2.0.txt
