@@ -45,6 +45,10 @@ export 'src/process/privilege_checker.dart';
 export 'src/process/process_runner.dart';
 export 'src/process/system_process_runner.dart';
 
+// Linux user-systemd environment management.
+export 'src/systemd/user_systemd_manager.dart';
+export 'src/systemd/user_systemd_status.dart';
+
 // Logging.
 export 'src/logging/log_level.dart';
 export 'src/logging/service_logger.dart';

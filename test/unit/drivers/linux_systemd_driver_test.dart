@@ -274,4 +274,59 @@ void main() {
       throwsA(isA<PermissionDeniedException>()),
     );
   });
+
+  group('with a UserSystemdManager', () {
+    late FakeProcessRunner runner;
+    late LinuxSystemdDriver driver;
+
+    setUp(() {
+      runner = FakeProcessRunner(
+        responder: (run) {
+          if (run.executable == 'id') {
+            return ProcessRunResult(
+              exitCode: 0,
+              stdout: run.args.contains('-un') ? 'alice\n' : '1000\n',
+            );
+          }
+          if (run.executable == 'loginctl') {
+            return const ProcessRunResult(exitCode: 0, stdout: 'Linger=yes\n');
+          }
+          return const ProcessRunResult(exitCode: 0);
+        },
+      );
+      driver = LinuxSystemdDriver(
+        processRunner: runner,
+        environment: {'HOME': home.path},
+        userSystemd: UserSystemdManager(
+          runner: runner,
+          operatingSystem: 'linux',
+          environment: const {},
+        ),
+      );
+    });
+
+    test('user-scope install ensures persistent systemd first', () async {
+      await driver.install(descriptor());
+      // ensure ran its probes
+      expect(
+        runner.runs.any((r) => r.commandLine.contains('command -v systemctl')),
+        isTrue,
+      );
+      expect(runner.runs.any((r) => r.args.contains('show-user')), isTrue);
+    });
+
+    test('systemctl --user calls carry XDG_RUNTIME_DIR', () async {
+      await driver.install(descriptor());
+      final enable = runner.runs.firstWhere((r) => r.args.contains('enable'));
+      expect(enable.environment, {'XDG_RUNTIME_DIR': '/run/user/1000'});
+    });
+
+    test('system-scope calls skip probes and XDG_RUNTIME_DIR', () async {
+      // `start` exercises _systemctl without touching the filesystem.
+      await driver.start(descriptor(scope: ServiceScope.system));
+      expect(runner.runs.any((r) => r.args.contains('show-user')), isFalse);
+      expect(runner.last.args, ['start', 'dart_analytics_worker']);
+      expect(runner.last.environment, isNull);
+    });
+  });
 }

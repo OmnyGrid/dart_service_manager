@@ -124,12 +124,21 @@ See [`example/sample_package`](example/sample_package) for a runnable package, o
 - **Per platform** — systemd (Linux), launchd (macOS) or the Service Control
   Manager (Windows), all present by default on their respective OSes.
 
+> **Linux user services & persistence.** A user-scoped service runs under
+> `systemctl --user`, which needs a per-user systemd bus and **lingering**
+> (`loginctl enable-linger`) to keep running after logout and start at boot.
+> `install` detects this automatically (resolving `XDG_RUNTIME_DIR`, validating
+> the user bus, and trying `sudo loginctl enable-linger` non-interactively). If
+> it cannot enable lingering itself it proceeds and warns with the exact command
+> to run. You can also drive it directly via `UserSystemdManager`
+> (`ensurePersistentUserSystemd()`), which returns a detailed `UserSystemdStatus`.
+
 ## Getting started
 
 ```yaml
 # pubspec.yaml
 dev_dependencies:
-  dart_service_manager: ^1.2.0
+  dart_service_manager: ^1.3.0
 ```
 
 ```bash
