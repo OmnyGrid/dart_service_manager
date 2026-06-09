@@ -1,3 +1,12 @@
+## Unreleased
+
+- Add a Shelf HTTP server example (`example/shelf_server`) showing a real web
+  server declared as a service and managed end-to-end, with graceful
+  `SIGTERM`/`SIGINT` shutdown.
+- Document package-wide operations in the README: a bare `package` reference
+  (no `:service`) targets every service of the package — including
+  `uninstall` — and uninstalling deletes each service's cached native binary.
+
 ## 1.0.0
 
 Initial release.

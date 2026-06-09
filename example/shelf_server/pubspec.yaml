@@ -1,0 +1,21 @@
+name: shelf_server
+description: An example package whose dart_service_manager service is a Shelf HTTP server.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.9
+
+dependencies:
+  shelf: ^1.4.2
+
+# A single service: a Shelf HTTP API. `dart-service install shelf_server`
+# compiles bin/server.dart to a native executable and installs it as an OS
+# service; `args` and `env` below are passed to the running service.
+dart_services:
+  api:
+    script: bin/server.dart
+    description: Example Shelf HTTP API
+    args: ['--port', '8080']
+    env:
+      LOG_LEVEL: info
