@@ -1,4 +1,4 @@
-## Unreleased
+## 1.0.1
 
 - Add a Shelf HTTP server example (`example/shelf_server`) showing a real web
   server declared as a service and managed end-to-end, with graceful
