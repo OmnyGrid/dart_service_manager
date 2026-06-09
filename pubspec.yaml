@@ -20,5 +20,6 @@ dependencies:
   yaml: ^3.1.2
 
 dev_dependencies:
+  dependency_validator: ^5.0.5
   lints: ^6.0.0
   test: ^1.25.6

@@ -6,7 +6,7 @@ import 'error_codes.dart';
 /// concrete failure modes. Each exception carries a stable, machine-readable
 /// [code] (see [ErrorCodes]), a human-readable [message], and an optional
 /// [cause] that preserves the underlying error (a process failure, an
-/// [IOException], etc.) for diagnostics.
+/// `IOException`, etc.) for diagnostics.
 ///
 /// ```dart
 /// try {
