@@ -1,3 +1,17 @@
+## 1.3.0
+
+- **Persistent user-level systemd (Linux)**: user-scoped installs now
+  auto-configure the per-user systemd environment so services install, enable,
+  start, and survive logout/reboot. A new `UserSystemdManager`
+  (`ensurePersistentUserSystemd()`) detects `systemctl`/`loginctl`, the current
+  user/uid, lingering, the user D-Bus bus, and `XDG_RUNTIME_DIR`; enables
+  lingering via `sudo -n loginctl enable-linger` when possible (warning with the
+  manual command otherwise); and returns a detailed `UserSystemdStatus`
+  (diagnostics + actionable warnings). The systemd driver runs it before
+  user-scoped installs and passes a resolved `XDG_RUNTIME_DIR` to all
+  `systemctl --user` calls, fixing `Failed to connect to bus: …` errors. Linux
+  only, idempotent, never assumes root.
+
 ## 1.1.0
 
 First-class third-party / imperative integration.

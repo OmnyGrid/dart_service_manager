@@ -9,6 +9,7 @@ import '../models/service_descriptor.dart';
 import '../models/service_scope.dart';
 import '../models/service_status.dart';
 import '../process/process_runner.dart';
+import '../systemd/user_systemd_manager.dart';
 import 'permission_classifier.dart';
 import 'platform_service_driver.dart';
 
@@ -34,12 +35,24 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
   /// The `systemctl` executable name or path.
   final String systemctlPath;
 
+  /// Ensures the per-user systemd environment is persistent (lingering enabled,
+  /// user bus reachable) before user-scoped installs, and supplies the
+  /// `XDG_RUNTIME_DIR` used for `systemctl --user` calls.
+  ///
+  /// When `null`, that handling is skipped and `systemctl --user` runs with the
+  /// inherited environment (the pre-1.x behaviour).
+  final UserSystemdManager? userSystemd;
+
+  /// Cached resolved `XDG_RUNTIME_DIR` for user-scope `systemctl` calls.
+  String? _runtimeDirectory;
+
   /// Creates a systemd driver.
   LinuxSystemdDriver({
     required this.processRunner,
     this.logger = const SilentServiceLogger(),
     Map<String, String>? environment,
     this.systemctlPath = 'systemctl',
+    this.userSystemd,
   }) : environment = environment ?? Platform.environment;
 
   @override
@@ -57,6 +70,12 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
 
   @override
   Future<void> install(ServiceDescriptor service) async {
+    if (service.scope == ServiceScope.user && userSystemd != null) {
+      // Make the user systemd instance persistent (lingering) and validate the
+      // user bus before we try to enable/start a --user unit.
+      final status = await userSystemd!.ensurePersistentUserSystemd();
+      _runtimeDirectory = status.runtimeDirectory;
+    }
     final dir = Directory(_unitDirectory(service.scope));
     try {
       dir.createSync(recursive: true);
@@ -234,9 +253,27 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
     return home;
   }
 
-  Future<ProcessRunResult> _systemctl(List<String> args, ServiceScope scope) {
-    final full = scope == ServiceScope.user ? ['--user', ...args] : args;
-    return processRunner.run(systemctlPath, full);
+  Future<ProcessRunResult> _systemctl(
+    List<String> args,
+    ServiceScope scope,
+  ) async {
+    if (scope != ServiceScope.user) {
+      return processRunner.run(systemctlPath, args);
+    }
+    return processRunner.run(systemctlPath, [
+      '--user',
+      ...args,
+    ], environment: await _userEnvironment());
+  }
+
+  /// The environment for `systemctl --user` calls. When a [userSystemd] manager
+  /// is configured, `XDG_RUNTIME_DIR` is resolved (and cached) so the call can
+  /// reach the per-user bus even when it is absent from the inherited
+  /// environment; otherwise `null` preserves the inherited environment.
+  Future<Map<String, String>?> _userEnvironment() async {
+    if (userSystemd == null) return null;
+    _runtimeDirectory ??= await userSystemd!.resolveRuntimeDirectory();
+    return {'XDG_RUNTIME_DIR': _runtimeDirectory!};
   }
 
   Future<void> _run(

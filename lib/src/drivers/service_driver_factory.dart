@@ -4,6 +4,7 @@ import '../errors/service_exception.dart';
 import '../logging/service_logger.dart';
 import '../process/process_runner.dart';
 import '../process/system_process_runner.dart';
+import '../systemd/user_systemd_manager.dart';
 import 'linux_systemd_driver.dart';
 import 'macos_launchd_driver.dart';
 import 'platform_service_driver.dart';
@@ -37,7 +38,16 @@ final class ServiceDriverFactory {
   }) {
     switch (operatingSystem) {
       case 'linux':
-        return LinuxSystemdDriver(processRunner: processRunner, logger: logger);
+        return LinuxSystemdDriver(
+          processRunner: processRunner,
+          logger: logger,
+          // Auto-configure persistent user systemd (lingering / user bus)
+          // before user-scoped installs.
+          userSystemd: UserSystemdManager(
+            runner: processRunner,
+            logger: logger,
+          ),
+        );
       case 'macos':
         return MacOsLaunchdDriver(processRunner: processRunner, logger: logger);
       case 'windows':
