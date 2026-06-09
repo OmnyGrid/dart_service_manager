@@ -65,6 +65,7 @@ final class UserSystemdManager {
     'Failed to connect to bus: No medium found',
     'Failed to connect to bus: No such file or directory',
     'Failed to connect to bus: Connection refused',
+    'Failed to connect to bus: Permission denied',
   ];
 
   /// Detects the current user's systemd environment, enabling lingering when
@@ -130,9 +131,33 @@ final class UserSystemdManager {
       }
     }
 
-    // Runtime directory.
-    final runtimeDirectory = _runtimeDirectoryFor(uid);
-    diagnostics.add('XDG_RUNTIME_DIR: $runtimeDirectory');
+    // Runtime directory. The per-user bus lives at /run/user/<uid>; an
+    // inherited XDG_RUNTIME_DIR that points at a *different* uid (common under
+    // sudo/su or service contexts) would send us to another user's bus and
+    // fail with "Permission denied", so it is overridden.
+    final canonicalRuntime = '/run/user/$uid';
+    final inheritedRuntime = environment['XDG_RUNTIME_DIR'];
+    final String runtimeDirectory;
+    if (inheritedRuntime == null ||
+        inheritedRuntime.isEmpty ||
+        inheritedRuntime == canonicalRuntime) {
+      runtimeDirectory = inheritedRuntime?.isNotEmpty == true
+          ? inheritedRuntime!
+          : canonicalRuntime;
+      diagnostics.add('XDG_RUNTIME_DIR: $runtimeDirectory');
+    } else {
+      runtimeDirectory = canonicalRuntime;
+      diagnostics.add(
+        'XDG_RUNTIME_DIR: $canonicalRuntime '
+        '(overrode inherited $inheritedRuntime — wrong user)',
+      );
+      warnings.add(
+        'Inherited XDG_RUNTIME_DIR ($inheritedRuntime) belongs to a different '
+        'user than $username (uid $uid); using $canonicalRuntime instead. This '
+        'usually means the environment came from another user via sudo/su — '
+        'run directly as $username for the user bus to work.',
+      );
+    }
 
     // User-bus validation.
     var userBusAvailable = false;
@@ -148,12 +173,22 @@ final class UserSystemdManager {
         diagnostics.add('user bus: reachable');
       } else {
         diagnostics.add('user bus: $busError');
-        warnings.add(
-          'Cannot reach the per-user systemd bus (XDG_RUNTIME_DIR='
-          '$runtimeDirectory): $busError. Ensure you have an active login '
-          'session, or enable lingering '
-          '(sudo loginctl enable-linger $username) and reconnect.',
-        );
+        if (busError.contains('Permission denied')) {
+          warnings.add(
+            'Cannot reach the per-user systemd bus (XDG_RUNTIME_DIR='
+            '$runtimeDirectory): $busError. The bus socket is owned by '
+            '$username (uid $uid) — make sure the install is actually running '
+            'as $username (not via sudo/su from another user) and that a login '
+            'session or lingering is active.',
+          );
+        } else {
+          warnings.add(
+            'Cannot reach the per-user systemd bus (XDG_RUNTIME_DIR='
+            '$runtimeDirectory): $busError. Ensure you have an active login '
+            'session, or enable lingering '
+            '(sudo loginctl enable-linger $username) and reconnect.',
+          );
+        }
       }
     }
 
@@ -176,18 +211,19 @@ final class UserSystemdManager {
     return status;
   }
 
-  /// Resolves the user's runtime directory: `XDG_RUNTIME_DIR` if set, otherwise
-  /// `/run/user/<uid>`. Used to point `systemctl --user` at the right bus.
-  Future<String> resolveRuntimeDirectory() async {
-    final fromEnv = environment['XDG_RUNTIME_DIR'];
-    if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
-    return _runtimeDirectoryFor(await _uid());
-  }
+  /// Resolves the user's runtime directory for `systemctl --user`.
+  ///
+  /// Returns `/run/user/<uid>` for the current uid, honouring an inherited
+  /// `XDG_RUNTIME_DIR` only when it already matches that path. An inherited
+  /// value pointing at another user's runtime dir is ignored (it would route
+  /// to the wrong bus).
+  Future<String> resolveRuntimeDirectory() => _runtimeDirectoryFor(_uid());
 
-  String _runtimeDirectoryFor(int uid) {
+  Future<String> _runtimeDirectoryFor(Future<int> uidFuture) async {
+    final uid = await uidFuture;
+    final canonical = '/run/user/$uid';
     final fromEnv = environment['XDG_RUNTIME_DIR'];
-    if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
-    return '/run/user/$uid';
+    return (fromEnv == canonical) ? fromEnv! : canonical;
   }
 
   /// Returns the first matching known bus failure (or any line containing the
