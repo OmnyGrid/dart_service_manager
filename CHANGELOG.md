@@ -1,4 +1,4 @@
-## 1.3.0
+## 1.2.0
 
 - **Persistent user-level systemd (Linux)**: user-scoped installs now
   auto-configure the per-user systemd environment so services install, enable,
@@ -11,8 +11,6 @@
   user-scoped installs and passes a resolved `XDG_RUNTIME_DIR` to all
   `systemctl --user` calls, fixing `Failed to connect to bus: …` errors. Linux
   only, idempotent, never assumes root.
-
-## 1.2.0
 
 - **Scope/privilege warning**: `install` now detects a mismatch between the
   requested scope and the current privilege level — running under `sudo`/root
