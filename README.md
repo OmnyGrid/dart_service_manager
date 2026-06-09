@@ -138,7 +138,7 @@ See [`example/sample_package`](example/sample_package) for a runnable package, o
 ```yaml
 # pubspec.yaml
 dev_dependencies:
-  dart_service_manager: ^1.2.1
+  dart_service_manager: ^1.2.2
 ```
 
 ```bash

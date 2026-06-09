@@ -338,7 +338,17 @@ class DartServiceManager {
 
   /// Best-effort removal of a cached service binary; failures are logged, not
   /// fatal, since the OS service is already gone.
+  ///
+  /// Only binaries the manager itself compiled into its managed output
+  /// directory are removed. Externally-provided executables — an
+  /// `installDescriptor` target, a manifest `executable:` path, or the Dart VM
+  /// itself for a `forCurrentExecutable` install — are left untouched, so
+  /// uninstall can never delete a binary it did not create.
   void _deleteBinary(String path) {
+    if (!_isManagedBinary(path)) {
+      logger.debug('Keeping externally-provided binary $path');
+      return;
+    }
     try {
       final file = File(path);
       if (file.existsSync()) file.deleteSync();
@@ -346,6 +356,11 @@ class DartServiceManager {
       logger.warning('Could not delete binary $path: $e');
     }
   }
+
+  /// Whether [path] lives inside the compiler's managed output directory (i.e.
+  /// the manager produced it), making it safe to delete on uninstall.
+  bool _isManagedBinary(String path) =>
+      p.isWithin(p.absolute(compiler.outputDirectory), p.absolute(path));
 
   /// Starts the installed service [serviceName] of [packageName].
   Future<void> start(String packageName, String serviceName) =>

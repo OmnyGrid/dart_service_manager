@@ -205,6 +205,24 @@ dart_services:
     expect(File(binary).existsSync(), isFalse);
   });
 
+  test('uninstall never deletes an externally-provided executable', () async {
+    // Simulates a `forCurrentExecutable` / installDescriptor service whose
+    // binary (e.g. /usr/lib/dart/bin/dart) lives outside the managed dir.
+    final external = File(p.join(root.path, 'external_dart'))
+      ..writeAsStringSync('the real dart vm');
+    await manager.installDescriptor(
+      ServiceDescriptor(
+        packageName: 'omnyshell',
+        serviceName: 'hub',
+        executablePath: external.path,
+        arguments: const ['hub', 'start'],
+      ),
+    );
+    await manager.uninstall('omnyshell', serviceName: 'hub');
+    expect(await registry.find('omnyshell', 'hub'), isNull);
+    expect(File(external.path).existsSync(), isTrue, reason: 'must be kept');
+  });
+
   test('operating on an unknown service throws ServiceNotFoundException', () {
     expect(
       () => manager.start('analytics', 'ghost'),

@@ -1,3 +1,12 @@
+## 1.2.2
+
+- Fix a destructive bug where `uninstall` could delete an externally-provided
+  executable — including the Dart VM itself (`/usr/lib/dart/bin/dart`) for a
+  `forCurrentExecutable` / `dart pub global activate` install. Uninstall now
+  only deletes binaries the manager compiled into its own managed directory;
+  `installDescriptor` targets, manifest `executable:` paths and the Dart VM are
+  left untouched.
+
 ## 1.2.1
 
 - Fix persistent user systemd on Linux when the process inherited an
