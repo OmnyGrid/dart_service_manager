@@ -14,6 +14,7 @@ import '../models/dart_package_service.dart';
 import '../models/service_descriptor.dart';
 import '../models/service_scope.dart';
 import '../models/service_status.dart';
+import '../process/privilege_checker.dart';
 import '../process/process_runner.dart';
 import '../process/system_process_runner.dart';
 import '../registry/json_service_registry.dart';
@@ -57,6 +58,10 @@ class DartServiceManager {
   /// The structured logger.
   final ServiceLogger logger;
 
+  /// Probes whether the process is running elevated, to warn about
+  /// scope/privilege mismatches at install time.
+  final PrivilegeChecker privilegeChecker;
+
   /// Creates a manager from explicit collaborators (used in tests).
   DartServiceManager({
     required this.resolver,
@@ -65,6 +70,7 @@ class DartServiceManager {
     required this.registry,
     required this.driver,
     this.logger = const SilentServiceLogger(),
+    this.privilegeChecker = const SystemPrivilegeChecker(),
   });
 
   /// Creates a manager wired with the production collaborators for the current
@@ -94,6 +100,7 @@ class DartServiceManager {
         logger: logger,
       ),
       logger: logger,
+      privilegeChecker: SystemPrivilegeChecker(runner: processRunner),
     );
   }
 
@@ -113,6 +120,7 @@ class DartServiceManager {
     String? path,
     bool force = false,
   }) async {
+    await _warnScopePrivilege(scope);
     final packageRoot = await resolver.resolve(packageName, path: path);
     final manifest = await manifestLoader.load(packageRoot);
     final definitions = serviceName == null
@@ -158,6 +166,7 @@ class DartServiceManager {
     bool startNow = false,
     bool force = false,
   }) async {
+    await _warnScopePrivilege(descriptor.scope);
     final existing = await registry.find(
       descriptor.packageName,
       descriptor.serviceName,
@@ -231,6 +240,34 @@ class DartServiceManager {
       force: force,
     );
     return binary.absolute.path;
+  }
+
+  /// Warns when the requested [scope] does not match the current privilege
+  /// level — the common "ran under sudo but scope is user" (and the reverse)
+  /// mistakes — then returns so the install can proceed.
+  Future<void> _warnScopePrivilege(ServiceScope scope) async {
+    final bool elevated;
+    try {
+      elevated = await privilegeChecker.isElevated();
+    } on Object {
+      return; // never let a privilege probe failure block an install
+    }
+    if (elevated &&
+        scope == ServiceScope.user &&
+        driver.platform != 'windows') {
+      logger.warning(
+        'Running as root/sudo but installing a USER-scoped service. User '
+        'services (systemctl --user, launchd user agents) usually fail or '
+        'install for the wrong user under sudo. Re-run without sudo, or pass '
+        '--system (--scope system) to install a system service.',
+      );
+    } else if (!elevated && scope == ServiceScope.system) {
+      logger.warning(
+        'Installing a SYSTEM-scoped service without root/administrator '
+        'privileges; this will likely fail. Re-run with sudo (Linux/macOS) or '
+        'as Administrator (Windows).',
+      );
+    }
   }
 
   ServiceDescriptor _descriptorFromDefinition(

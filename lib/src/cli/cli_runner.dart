@@ -36,6 +36,13 @@ CommandRunner<int> buildServiceRunner({
           defaultsTo: 'user',
           help: 'Privilege scope to install services under.',
         )
+        ..argParser.addFlag(
+          'system',
+          negatable: false,
+          help:
+              'Shorthand for --scope system (install a machine-wide service; '
+              'requires root/Administrator).',
+        )
         ..argParser.addOption(
           'path',
           help:
@@ -95,12 +102,18 @@ Future<int> runCli(
 
 DartServiceManager _defaultManagerFactory({required bool verbose}) =>
     DartServiceManager.forCurrentPlatform(
-      logger: verbose
-          ? ConsoleServiceLogger(minLevel: LogLevel.debug)
-          : const SilentServiceLogger(),
+      // Always surface warnings/errors; only show info/debug with --verbose.
+      logger: ConsoleServiceLogger(
+        minLevel: verbose ? LogLevel.debug : LogLevel.warning,
+      ),
     );
 
-/// Reads the `--scope` global option as a [ServiceScope].
-ServiceScope scopeFromGlobals(ArgResults? globals) =>
-    ServiceScope.tryParse(globals?['scope'] as String? ?? 'user') ??
-    ServiceScope.user;
+/// Reads the requested [ServiceScope] from the global options.
+///
+/// `--system` is a shorthand for `--scope system` and takes precedence when
+/// set; otherwise the `--scope` value is used.
+ServiceScope scopeFromGlobals(ArgResults? globals) {
+  if (globals?['system'] == true) return ServiceScope.system;
+  return ServiceScope.tryParse(globals?['scope'] as String? ?? 'user') ??
+      ServiceScope.user;
+}

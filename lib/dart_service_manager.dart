@@ -41,6 +41,7 @@ export 'src/drivers/service_driver_factory.dart';
 export 'src/drivers/windows_service_driver.dart';
 
 // Process abstraction.
+export 'src/process/privilege_checker.dart';
 export 'src/process/process_runner.dart';
 export 'src/process/system_process_runner.dart';
 

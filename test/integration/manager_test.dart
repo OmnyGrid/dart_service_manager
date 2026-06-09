@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../support/fake_driver.dart';
+import '../support/fake_privilege_checker.dart';
 import '../support/fake_process_runner.dart';
 import '../support/in_memory_registry.dart';
 
@@ -13,6 +14,8 @@ void main() {
   late Directory packageRoot;
   late InMemoryServiceRegistry registry;
   late FakeServiceDriver driver;
+  late FakePrivilegeChecker privilege;
+  late RecordingServiceLogger log;
   late DartServiceManager manager;
 
   DartServiceManager build({FakeServiceDriver? withDriver}) {
@@ -34,10 +37,14 @@ void main() {
       ),
       registry: registry,
       driver: driver,
+      logger: log,
+      privilegeChecker: privilege,
     );
   }
 
   setUp(() {
+    privilege = FakePrivilegeChecker();
+    log = RecordingServiceLogger();
     root = Directory.systemTemp.createTempSync('dsm_manager');
     packageRoot = Directory(p.join(root.path, 'analytics'))..createSync();
     Directory(p.join(packageRoot.path, 'bin')).createSync();
@@ -327,4 +334,69 @@ dart_services:
       expect(entry.binaryPath, prebuilt.absolute.path);
     },
   );
+
+  group('scope/privilege warnings', () {
+    test('warns when elevated but installing a user-scoped service', () async {
+      privilege.elevated = true;
+      await manager.install(
+        'analytics',
+        serviceName: 'worker',
+        path: packageRoot.path,
+      );
+      expect(log.text, contains('USER-scoped'));
+      expect(log.text, contains('--system'));
+    });
+
+    test('warns when installing system-scoped without elevation', () async {
+      privilege.elevated = false;
+      await manager.installDescriptor(
+        ServiceDescriptor(
+          packageName: 'svc',
+          serviceName: 'api',
+          executablePath: '/opt/bin/api',
+          scope: ServiceScope.system,
+        ),
+      );
+      expect(log.text, contains('SYSTEM-scoped'));
+    });
+
+    test(
+      'no warning when scope matches privilege (elevated + system)',
+      () async {
+        privilege.elevated = true;
+        await manager.installDescriptor(
+          ServiceDescriptor(
+            packageName: 'svc',
+            serviceName: 'api',
+            executablePath: '/opt/bin/api',
+            scope: ServiceScope.system,
+          ),
+        );
+        expect(log.text, isNot(contains('scoped')));
+      },
+    );
+
+    test('no warning for the common unprivileged user install', () async {
+      privilege.elevated = false;
+      await manager.install(
+        'analytics',
+        serviceName: 'worker',
+        path: packageRoot.path,
+      );
+      expect(log.text, isNot(contains('scoped')));
+    });
+
+    test('no user-scope warning on Windows (no real user scope)', () async {
+      manager = build(withDriver: FakeServiceDriver(platform: 'windows'));
+      privilege.elevated = true;
+      await manager.installDescriptor(
+        ServiceDescriptor(
+          packageName: 'svc',
+          serviceName: 'api',
+          executablePath: r'C:\bin\api.exe',
+        ),
+      );
+      expect(log.text, isNot(contains('USER-scoped')));
+    });
+  });
 }
