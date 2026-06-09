@@ -23,6 +23,16 @@ abstract interface class PlatformServiceDriver {
   /// [pause] and [resume] throw `PlatformNotSupportedException`.
   bool get supportsPauseResume;
 
+  /// Whether this platform can load environment from a file referenced by
+  /// `ServiceDescriptor.environmentFile` (systemd does; launchd and the Windows
+  /// SCM do not). When `false`, [install] rejects a descriptor that sets one.
+  bool get supportsEnvironmentFile;
+
+  /// Renders the native service definition for [service] as a string (a systemd
+  /// unit, a launchd plist, or the `sc` command line) **without** touching the
+  /// system — the basis of the CLI `--dry-run`.
+  String render(ServiceDescriptor service);
+
   /// Installs [service]: generates any native definition and registers it with
   /// the OS so it can be started.
   Future<void> install(ServiceDescriptor service);

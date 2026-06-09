@@ -36,7 +36,7 @@ void main() {
   });
 
   test('buildPlist renders a valid agent plist', () {
-    final plist = driver.buildPlist(descriptor(env: {'LOG': 'debug'}));
+    final plist = driver.render(descriptor(env: {'LOG': 'debug'}));
     expect(plist, contains('<key>Label</key>'));
     expect(
       plist,
@@ -176,7 +176,7 @@ void main() {
       executablePath: '/opt/bin/worker',
       environment: {'X': 'a<b>&c'},
     );
-    expect(driver.buildPlist(svc), contains('a&lt;b&gt;&amp;c'));
+    expect(driver.render(svc), contains('a&lt;b&gt;&amp;c'));
   });
 
   test('stop throws ServiceStopException on failure', () {
@@ -215,6 +215,78 @@ void main() {
     expect(
       () => failing.install(descriptor()),
       throwsA(isA<ServiceInstallationException>()),
+    );
+  });
+
+  test('does not support environment files', () {
+    expect(driver.supportsEnvironmentFile, isFalse);
+  });
+
+  ServiceDescriptor policy({
+    RestartPolicy restart = RestartPolicy.always,
+    bool autoStart = true,
+    Duration restartDelay = const Duration(seconds: 5),
+    Duration? stopTimeout,
+  }) => ServiceDescriptor(
+    packageName: 'analytics',
+    serviceName: 'worker',
+    executablePath: '/opt/bin/worker',
+    restart: restart,
+    autoStart: autoStart,
+    restartDelay: restartDelay,
+    stopTimeout: stopTimeout,
+  );
+
+  test('render maps on-failure to a KeepAlive dict', () {
+    final plist = driver.render(policy(restart: RestartPolicy.onFailure));
+    expect(plist, contains('<key>KeepAlive</key>'));
+    expect(plist, contains('<key>SuccessfulExit</key>'));
+    expect(plist, contains('<false/>'));
+  });
+
+  test('render maps never restart to KeepAlive false', () {
+    final plist = driver.render(policy(restart: RestartPolicy.never));
+    expect(plist, contains('<key>KeepAlive</key>\n  <false/>'));
+  });
+
+  test('render disables RunAtLoad when autoStart is false', () {
+    final plist = driver.render(policy(autoStart: false));
+    expect(plist, contains('<key>RunAtLoad</key>\n  <false/>'));
+  });
+
+  test('render emits ThrottleInterval and ExitTimeOut when set', () {
+    final plist = driver.render(
+      policy(
+        restartDelay: const Duration(seconds: 20),
+        stopTimeout: const Duration(seconds: 8),
+      ),
+    );
+    expect(plist, contains('<key>ThrottleInterval</key>'));
+    expect(plist, contains('<integer>20</integer>'));
+    expect(plist, contains('<key>ExitTimeOut</key>'));
+    expect(plist, contains('<integer>8</integer>'));
+  });
+
+  test('render rejects an environment file', () {
+    expect(
+      () => driver.render(descriptor().copyWith(environmentFile: '/etc/x.env')),
+      throwsA(isA<PlatformNotSupportedException>()),
+    );
+  });
+
+  test('maps permission failures to PermissionDeniedException', () {
+    final denied = MacOsLaunchdDriver(
+      processRunner: FakeProcessRunner(
+        defaultResult: const ProcessRunResult(
+          exitCode: 1,
+          stderr: 'Operation not permitted',
+        ),
+      ),
+      environment: {'HOME': home.path},
+    );
+    expect(
+      () => denied.start(descriptor()),
+      throwsA(isA<PermissionDeniedException>()),
     );
   });
 }

@@ -9,6 +9,81 @@ void main() {
     });
   });
 
+  group('RestartPolicy', () {
+    test('parses names and aliases', () {
+      expect(RestartPolicy.tryParse('always'), RestartPolicy.always);
+      expect(RestartPolicy.tryParse('on-failure'), RestartPolicy.onFailure);
+      expect(RestartPolicy.tryParse('on_failure'), RestartPolicy.onFailure);
+      expect(RestartPolicy.tryParse('onFailure'), RestartPolicy.onFailure);
+      expect(RestartPolicy.tryParse('never'), RestartPolicy.never);
+      expect(RestartPolicy.tryParse('whatever'), isNull);
+    });
+  });
+
+  group('ServiceDescriptor policy', () {
+    test('defaults match the pre-policy behaviour', () {
+      final d = ServiceDescriptor(
+        packageName: 'p',
+        serviceName: 's',
+        executablePath: '/bin/s',
+      );
+      expect(d.restart, RestartPolicy.always);
+      expect(d.restartDelay, const Duration(seconds: 5));
+      expect(d.autoStart, isTrue);
+      expect(d.workingDirectory, isNull);
+      expect(d.stopTimeout, isNull);
+      expect(d.environmentFile, isNull);
+    });
+
+    test('copyWith replaces policy fields', () {
+      final d =
+          ServiceDescriptor(
+            packageName: 'p',
+            serviceName: 's',
+            executablePath: '/bin/s',
+          ).copyWith(
+            restart: RestartPolicy.onFailure,
+            autoStart: false,
+            workingDirectory: '/srv',
+            environmentFile: '/etc/s.env',
+          );
+      expect(d.restart, RestartPolicy.onFailure);
+      expect(d.autoStart, isFalse);
+      expect(d.workingDirectory, '/srv');
+      expect(d.environmentFile, '/etc/s.env');
+    });
+  });
+
+  group('ServiceDescriptor.resolveSelfExecutable', () {
+    test('AOT binary uses the binary and args as-is', () {
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable: '/usr/local/bin/myapp',
+        script: '/proj/bin/main.dart',
+        arguments: ['hub', 'start'],
+      );
+      expect(r.executable, '/usr/local/bin/myapp');
+      expect(r.arguments, ['hub', 'start']);
+    });
+
+    test('JIT (dart VM) prepends the script', () {
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable: '/opt/dart-sdk/bin/dart',
+        script: '/proj/bin/main.dart',
+        arguments: ['hub', 'start'],
+      );
+      expect(r.executable, '/opt/dart-sdk/bin/dart');
+      expect(r.arguments, ['/proj/bin/main.dart', 'hub', 'start']);
+    });
+
+    test('dart VM without a known script falls back to args only', () {
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable: r'C:\dart\bin\dart.exe',
+        arguments: ['x'],
+      );
+      expect(r.arguments, ['x']);
+    });
+  });
+
   group('ServiceScope', () {
     test('tryParse handles known and unknown values', () {
       expect(ServiceScope.tryParse('system'), ServiceScope.system);

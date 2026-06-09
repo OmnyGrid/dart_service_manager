@@ -41,6 +41,20 @@ Most commands take a reference in one of two forms:
 | `packages` | List packages that have installed services. |
 | `services <package>` | List a package's installed services. |
 
+### `install` options
+
+| Option | Description |
+|--------|-------------|
+| `--executable <path>` | Install a pre-built executable as a service (instead of compiling). Requires a `package:service` ref; args after `--` are passed to the service. |
+| `--dry-run` | Print the rendered unit/plist/`sc` command and exit (requires `--executable`). |
+| `--start-now` | Start the service immediately after installing. |
+| `--force` | Replace an existing installation. |
+| `--restart <always\|on-failure\|never>` | Restart policy (`--executable` installs). Default `always`. |
+| `--restart-delay <seconds>` | Delay between restarts. Default `5`. |
+| `--working-dir <dir>` | Service working directory. |
+| `--env-file <path>` | Environment file to load (systemd only). |
+| `--no-auto-start` | Do not enable the service at boot/login. |
+
 ## Examples
 
 ```bash
@@ -52,6 +66,13 @@ dart-service --scope system install my_package:worker
 
 # Install from an explicit path.
 dart-service install my_package --path ../packages/my_package
+
+# Install a pre-built executable as a service, passing it args after `--`.
+dart-service install myapp:hub --executable /usr/local/bin/myapp \
+  --restart on-failure --env-file /etc/myapp/hub.env -- hub start
+
+# Preview the generated definition without installing.
+dart-service install myapp:hub --executable /usr/local/bin/myapp --dry-run -- hub start
 
 # Lifecycle.
 dart-service start my_package:worker

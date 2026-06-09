@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../compiler/service_compiler.dart';
 import '../drivers/platform_service_driver.dart';
 import '../drivers/service_driver_factory.dart';
@@ -7,6 +9,7 @@ import '../errors/service_exception.dart';
 import '../logging/service_logger.dart';
 import '../manifest/manifest_loader.dart';
 import '../manifest/package_resolver.dart';
+import '../manifest/service_manifest.dart';
 import '../models/dart_package_service.dart';
 import '../models/service_descriptor.dart';
 import '../models/service_scope.dart';
@@ -118,36 +121,169 @@ class DartServiceManager {
 
     for (final def in definitions) {
       logger.info('Installing ${manifest.packageName}:${def.name}');
-      final binary = await compiler.compileService(
-        packageName: manifest.packageName,
-        serviceName: def.name,
-        packageRoot: packageRoot,
-        scriptPath: def.script,
-        force: force,
+      final executablePath = await _resolveExecutable(
+        manifest.packageName,
+        def,
+        packageRoot,
+        force,
       );
-      final descriptor = ServiceDescriptor(
-        packageName: manifest.packageName,
-        serviceName: def.name,
-        executablePath: binary.absolute.path,
-        scope: scope,
-        description: def.description,
-        arguments: def.arguments,
-        environment: def.environment,
+      final descriptor = _descriptorFromDefinition(
+        manifest.packageName,
+        def,
+        executablePath,
+        scope,
+        packageRoot,
       );
       await driver.install(descriptor);
       await registry.upsert(
-        RegistryEntry(
-          packageName: manifest.packageName,
-          serviceName: def.name,
-          platform: driver.platform,
-          scope: scope,
-          binaryPath: binary.absolute.path,
-          installedAt: DateTime.now().toUtc(),
-          status: ServiceStatus.installed,
-        ),
+        _entryFromDescriptor(descriptor, status: ServiceStatus.installed),
       );
     }
   }
+
+  /// Installs an already-built executable described by [descriptor] as a
+  /// service, bypassing package resolution, manifest loading and compilation.
+  ///
+  /// Use this to install a binary you already have — e.g. your own CLI via
+  /// [ServiceDescriptor.forCurrentExecutable] — with caller-supplied
+  /// arguments, environment and runtime policy. The full descriptor is recorded
+  /// in the registry so lifecycle, listing and [reconfigure] work without a
+  /// manifest.
+  ///
+  /// Throws [ServiceAlreadyInstalledException] if the service is already
+  /// installed and [force] is `false`. When [startNow] is `true`, the service
+  /// is started after installation.
+  Future<void> installDescriptor(
+    ServiceDescriptor descriptor, {
+    bool startNow = false,
+    bool force = false,
+  }) async {
+    final existing = await registry.find(
+      descriptor.packageName,
+      descriptor.serviceName,
+    );
+    if (existing != null && !force) {
+      throw ServiceAlreadyInstalledException(
+        "Service '${descriptor.qualifiedName}' is already installed. Pass "
+        'force: true to replace it, or use reconfigure().',
+      );
+    }
+    logger.info('Installing ${descriptor.qualifiedName} (descriptor)');
+    await driver.install(descriptor);
+    await registry.upsert(
+      _entryFromDescriptor(descriptor, status: ServiceStatus.installed),
+    );
+    if (startNow) await start(descriptor.packageName, descriptor.serviceName);
+  }
+
+  /// Re-applies [descriptor] to an already-installed service: re-renders the
+  /// native definition, updates the registry, and preserves the running state
+  /// (a service that was running is restarted onto the new definition).
+  ///
+  /// Throws [ServiceNotFoundException] if the service is not installed.
+  Future<void> reconfigure(ServiceDescriptor descriptor) async {
+    final existing = await _requireEntry(
+      descriptor.packageName,
+      descriptor.serviceName,
+    );
+    final wasRunning = await driver.status(descriptor) == ServiceStatus.running;
+    logger.info('Reconfiguring ${descriptor.qualifiedName}');
+    await driver.install(descriptor);
+    await registry.upsert(
+      _entryFromDescriptor(
+        descriptor,
+        status: existing.status,
+        installedAt: existing.installedAt,
+      ),
+    );
+    if (wasRunning) await driver.restart(descriptor);
+  }
+
+  /// Renders the native service definition (systemd unit, launchd plist or `sc`
+  /// command line) for [descriptor] without touching the system — backs the CLI
+  /// `--dry-run`.
+  String renderDefinition(ServiceDescriptor descriptor) =>
+      driver.render(descriptor);
+
+  Future<String> _resolveExecutable(
+    String packageName,
+    ServiceDefinition def,
+    String packageRoot,
+    bool force,
+  ) async {
+    if (def.isPrebuilt) {
+      final exe = p.isAbsolute(def.executable!)
+          ? def.executable!
+          : p.normalize(p.join(packageRoot, def.executable!));
+      if (!File(exe).existsSync()) {
+        throw ServiceInstallationException(
+          "Executable '${def.executable}' not found at $exe for "
+          '$packageName:${def.name}.',
+        );
+      }
+      return exe;
+    }
+    final binary = await compiler.compileService(
+      packageName: packageName,
+      serviceName: def.name,
+      packageRoot: packageRoot,
+      scriptPath: def.script!,
+      force: force,
+    );
+    return binary.absolute.path;
+  }
+
+  ServiceDescriptor _descriptorFromDefinition(
+    String packageName,
+    ServiceDefinition def,
+    String executablePath,
+    ServiceScope scope,
+    String packageRoot,
+  ) {
+    String? rel(String? value) => value == null
+        ? null
+        : (p.isAbsolute(value)
+              ? value
+              : p.normalize(p.join(packageRoot, value)));
+    return ServiceDescriptor(
+      packageName: packageName,
+      serviceName: def.name,
+      executablePath: executablePath,
+      scope: scope,
+      description: def.description,
+      arguments: def.arguments,
+      environment: def.environment,
+      workingDirectory: rel(def.workingDirectory),
+      restart: def.restart,
+      restartDelay: def.restartDelay,
+      autoStart: def.autoStart,
+      stopTimeout: def.stopTimeout,
+      environmentFile: rel(def.environmentFile),
+    );
+  }
+
+  RegistryEntry _entryFromDescriptor(
+    ServiceDescriptor d, {
+    required ServiceStatus status,
+    DateTime? installedAt,
+  }) => RegistryEntry(
+    packageName: d.packageName,
+    serviceName: d.serviceName,
+    platform: driver.platform,
+    scope: d.scope,
+    binaryPath: d.executablePath,
+    installedAt: installedAt ?? DateTime.now().toUtc(),
+    status: status,
+    arguments: d.arguments,
+    environment: d.environment,
+    description: d.description,
+    workingDirectory: d.workingDirectory,
+    restart: d.restart,
+    restartDelay: d.restartDelay,
+    autoStart: d.autoStart,
+    stopTimeout: d.stopTimeout,
+    environmentFile: d.environmentFile,
+  );
 
   /// Uninstalls one or all services of [packageName] from the OS and registry.
   ///
@@ -276,6 +412,15 @@ class DartServiceManager {
     serviceName: entry.serviceName,
     executablePath: entry.binaryPath,
     scope: entry.scope,
+    description: entry.description,
+    arguments: entry.arguments,
+    environment: entry.environment,
+    workingDirectory: entry.workingDirectory,
+    restart: entry.restart,
+    restartDelay: entry.restartDelay,
+    autoStart: entry.autoStart,
+    stopTimeout: entry.stopTimeout,
+    environmentFile: entry.environmentFile,
   );
 
   Future<RegistryEntry> _requireEntry(String package, String service) async {

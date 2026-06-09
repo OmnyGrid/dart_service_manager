@@ -45,7 +45,7 @@ void main() {
   });
 
   test('buildUnitFile renders a valid user unit', () {
-    final unit = driver.buildUnitFile(
+    final unit = driver.render(
       descriptor(args: ['--port', '80'], env: {'LOG': 'debug'}),
     );
     expect(unit, contains('Description=Analytics Worker'));
@@ -56,7 +56,7 @@ void main() {
   });
 
   test('buildUnitFile targets multi-user.target for system scope', () {
-    final unit = driver.buildUnitFile(descriptor(scope: ServiceScope.system));
+    final unit = driver.render(descriptor(scope: ServiceScope.system));
     expect(unit, contains('WantedBy=multi-user.target'));
   });
 
@@ -190,10 +190,7 @@ void main() {
       serviceName: 'worker',
       executablePath: '/opt/my apps/worker',
     );
-    expect(
-      driver.buildUnitFile(svc),
-      contains('ExecStart="/opt/my apps/worker"'),
-    );
+    expect(driver.render(svc), contains('ExecStart="/opt/my apps/worker"'));
   });
 
   test('start throws ServiceStartException on failure', () {
@@ -206,6 +203,75 @@ void main() {
     expect(
       () => failing.start(descriptor()),
       throwsA(isA<ServiceStartException>()),
+    );
+  });
+
+  test('supports environment files', () {
+    expect(driver.supportsEnvironmentFile, isTrue);
+  });
+
+  test('render reflects runtime policy', () {
+    final svc = ServiceDescriptor(
+      packageName: 'analytics',
+      serviceName: 'worker',
+      executablePath: '/opt/bin/worker',
+      restart: RestartPolicy.onFailure,
+      restartDelay: const Duration(seconds: 30),
+      workingDirectory: '/srv/data',
+      stopTimeout: const Duration(seconds: 15),
+    );
+    final unit = driver.render(svc);
+    expect(unit, contains('Restart=on-failure'));
+    expect(unit, contains('RestartSec=30'));
+    expect(unit, contains('WorkingDirectory=/srv/data'));
+    expect(unit, contains('TimeoutStopSec=15'));
+  });
+
+  test('render uses EnvironmentFile instead of inline env', () {
+    final svc = ServiceDescriptor(
+      packageName: 'analytics',
+      serviceName: 'worker',
+      executablePath: '/opt/bin/worker',
+      environment: {'A': 'b'},
+      environmentFile: '/etc/worker.env',
+    );
+    final unit = driver.render(svc);
+    expect(unit, contains('EnvironmentFile=/etc/worker.env'));
+    expect(unit, isNot(contains('Environment="A=b"')));
+  });
+
+  test('render maps never restart policy to no', () {
+    final unit = driver.render(
+      descriptor().copyWith(restart: RestartPolicy.never),
+    );
+    expect(unit, contains('Restart=no'));
+  });
+
+  test('install skips enable when autoStart is false', () async {
+    await driver.install(descriptor().copyWith(autoStart: false));
+    expect(
+      runner.runs.map((r) => r.commandLine),
+      isNot(contains('systemctl --user enable dart_analytics_worker')),
+    );
+    expect(
+      runner.runs.map((r) => r.commandLine),
+      contains('systemctl --user daemon-reload'),
+    );
+  });
+
+  test('maps permission failures to PermissionDeniedException', () {
+    final denied = LinuxSystemdDriver(
+      processRunner: FakeProcessRunner(
+        defaultResult: const ProcessRunResult(
+          exitCode: 1,
+          stderr: 'Failed to enable: Permission denied',
+        ),
+      ),
+      environment: {'HOME': home.path},
+    );
+    expect(
+      () => denied.start(descriptor()),
+      throwsA(isA<PermissionDeniedException>()),
     );
   });
 }

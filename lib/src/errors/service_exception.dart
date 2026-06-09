@@ -91,3 +91,19 @@ final class ServiceNotFoundException extends ServiceManagerException {
   const ServiceNotFoundException(String message, {Object? cause})
     : super(ErrorCodes.notFound, message, cause: cause);
 }
+
+/// Thrown when an operation requires elevated privileges the caller lacks —
+/// e.g. installing a system-scoped service without root/administrator rights.
+final class PermissionDeniedException extends ServiceManagerException {
+  /// Creates a permission-denied failure with an optional root [cause].
+  const PermissionDeniedException(String message, {Object? cause})
+    : super(ErrorCodes.permissionDenied, message, cause: cause);
+}
+
+/// Thrown when installing a service that is already recorded in the registry,
+/// unless the caller opts into replacing it.
+final class ServiceAlreadyInstalledException extends ServiceManagerException {
+  /// Creates an already-installed failure with an optional root [cause].
+  const ServiceAlreadyInstalledException(String message, {Object? cause})
+    : super(ErrorCodes.alreadyInstalled, message, cause: cause);
+}

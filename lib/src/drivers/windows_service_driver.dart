@@ -2,9 +2,11 @@ import 'package:meta/meta.dart';
 
 import '../errors/service_exception.dart';
 import '../logging/service_logger.dart';
+import '../models/restart_policy.dart';
 import '../models/service_descriptor.dart';
 import '../models/service_status.dart';
 import '../process/process_runner.dart';
+import 'permission_classifier.dart';
 import 'platform_service_driver.dart';
 
 /// A [PlatformServiceDriver] for Windows that manages services through the
@@ -42,21 +44,17 @@ final class WindowsServiceDriver implements PlatformServiceDriver {
   bool get supportsPauseResume => true;
 
   @override
+  bool get supportsEnvironmentFile => false;
+
+  @override
   Future<void> install(ServiceDescriptor service) async {
-    final result = await processRunner.run(scPath, [
-      'create',
-      service.systemName,
-      'binPath=',
-      buildBinPath(service),
-      'start=',
-      'auto',
-      'DisplayName=',
-      service.description,
-    ]);
+    _validate(service);
+    final result = await processRunner.run(scPath, _createArgs(service));
     if (!result.succeeded) {
-      throw ServiceInstallationException(
-        'sc create failed (exit ${result.exitCode}): '
-        '${_message(result)}',
+      _fail(
+        result,
+        'sc create failed (exit ${result.exitCode}): ${_message(result)}',
+        ServiceInstallationException.new,
       );
     }
     await processRunner.run(scPath, [
@@ -64,7 +62,54 @@ final class WindowsServiceDriver implements PlatformServiceDriver {
       service.systemName,
       service.description,
     ]);
+    await _configureFailureActions(service);
     logger.info('Installed Windows service ${service.systemName}');
+  }
+
+  /// The argument vector for `sc create`, honouring [ServiceDescriptor.autoStart].
+  List<String> _createArgs(ServiceDescriptor service) => [
+    'create',
+    service.systemName,
+    'binPath=',
+    buildBinPath(service),
+    'start=',
+    service.autoStart ? 'auto' : 'demand',
+    'DisplayName=',
+    service.description,
+  ];
+
+  /// Configures SCM failure/restart actions to match the restart policy.
+  ///
+  /// `always`/`onFailure` → restart after [ServiceDescriptor.restartDelay];
+  /// `never` → no actions. (SCM failure actions fire on non-graceful exit, so
+  /// `always` and `onFailure` map to the same restart action.)
+  Future<void> _configureFailureActions(ServiceDescriptor service) async {
+    final actions = service.restart == RestartPolicy.never
+        ? ''
+        : 'restart/${service.restartDelay.inMilliseconds}';
+    await processRunner.run(scPath, [
+      'failure',
+      service.systemName,
+      'reset=',
+      '${service.restartDelay.inSeconds}',
+      'actions=',
+      actions,
+    ]);
+  }
+
+  void _validate(ServiceDescriptor service) {
+    if (service.environmentFile != null) {
+      throw const PlatformNotSupportedException(
+        'The Windows SCM has no environment-file support; set per-service '
+        'environment instead.',
+      );
+    }
+    if (service.workingDirectory != null) {
+      logger.warning(
+        'Windows SCM has no working-directory setting; '
+        '"${service.workingDirectory}" is ignored for ${service.systemName}.',
+      );
+    }
   }
 
   @override
@@ -75,11 +120,19 @@ final class WindowsServiceDriver implements PlatformServiceDriver {
       service.systemName,
     ]);
     if (!result.succeeded) {
-      throw ServiceInstallationException(
+      _fail(
+        result,
         'sc delete failed (exit ${result.exitCode}): ${_message(result)}',
+        ServiceInstallationException.new,
       );
     }
     logger.info('Uninstalled Windows service ${service.systemName}');
+  }
+
+  @override
+  String render(ServiceDescriptor service) {
+    _validate(service);
+    return '$scPath ${_createArgs(service).join(' ')}';
   }
 
   @override
@@ -150,10 +203,21 @@ final class WindowsServiceDriver implements PlatformServiceDriver {
   ) async {
     final result = await processRunner.run(scPath, [verb, service.systemName]);
     if (!result.succeeded) {
-      throw onError(
+      _fail(
+        result,
         'sc $verb failed (exit ${result.exitCode}): ${_message(result)}',
+        onError,
       );
     }
+  }
+
+  Never _fail(
+    ProcessRunResult result,
+    String message,
+    ServiceManagerException Function(String, {Object? cause}) onError,
+  ) {
+    if (isPermissionFailure(result)) throw PermissionDeniedException(message);
+    throw onError(message);
   }
 
   String _message(ProcessRunResult result) {
