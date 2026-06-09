@@ -1,0 +1,18 @@
+# https://dart.dev/guides/libraries/private-files
+# Created by `dart pub`
+.dart_tool/
+
+# Avoid committing pubspec.lock for library packages; see
+# https://dart.dev/guides/libraries/private-files#pubspeclock.
+pubspec.lock
+
+# Test coverage output.
+coverage/
+
+# Compiled service binaries produced by the example.
+example/sample_package/*.exe
+
+*.exe
+
+build/
+tmp/

@@ -1,0 +1,24 @@
+name: dart_service_manager
+description: >-
+  Declare services in a Dart package, compile them to native executables, and
+  install and manage them as native operating-system services on Linux
+  (systemd), macOS (launchd) and Windows (SCM). Ships a reusable library and a
+  thin `dart-service` CLI behind a first-class Dart API.
+version: 1.0.0
+repository: https://github.com/OmnyGrid/dart_service_manager
+
+environment:
+  sdk: ^3.10.9
+
+executables:
+  dart-service: dart_service
+
+dependencies:
+  args: ^2.7.0
+  meta: ^1.18.3
+  path: ^1.9.0
+  yaml: ^3.1.2
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

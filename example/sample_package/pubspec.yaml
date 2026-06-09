@@ -1,0 +1,23 @@
+name: sample_package
+description: An example package that declares multiple dart_service_manager services.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.9
+
+# Services declared by this package. `dart-service install sample_package`
+# compiles each entrypoint and installs it as a native OS service.
+dart_services:
+  # Shorthand form: service name -> entrypoint script.
+  worker: bin/worker.dart
+
+  # Map form: add a description, extra arguments and environment variables.
+  scheduler:
+    script: bin/scheduler.dart
+    description: Periodic job scheduler
+    args: ['--interval', '60']
+    env:
+      LOG_LEVEL: info
+
+  monitor: bin/monitor.dart

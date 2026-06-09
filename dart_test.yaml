@@ -1,0 +1,17 @@
+# Declares custom test tags.
+#
+# The `version` tag marks the test asserting dartServiceManagerVersion matches
+# pubspec.yaml (test/unit/version_test.dart).
+#
+# The `os-linux`, `os-macos` and `os-windows` tags mark tests that drive the
+# real init system (systemd/launchd/SCM) and therefore only run on a matching
+# host. They are skipped by default; run them explicitly with, e.g.,
+# `dart test -t os-macos`.
+tags:
+  version:
+  os-linux:
+    skip: 'requires a real systemd host; run with -t os-linux'
+  os-macos:
+    skip: 'requires a real launchd host; run with -t os-macos'
+  os-windows:
+    skip: 'requires a real Windows SCM host; run with -t os-windows'
