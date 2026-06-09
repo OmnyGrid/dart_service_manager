@@ -1,3 +1,14 @@
+## 1.2.1
+
+- Fix persistent user systemd on Linux when the process inherited an
+  `XDG_RUNTIME_DIR` belonging to a *different* user (common under sudo/su or
+  deploy scripts): the runtime directory is now derived from the detected uid
+  (`/run/user/<uid>`) and an inherited value is honoured only when it matches,
+  so `systemctl --user` no longer hits another user's bus and fails with
+  `Failed to connect to bus: Permission denied`. That error is now recognised
+  with an actionable hint, and a warning is emitted when a mismatched
+  `XDG_RUNTIME_DIR` is overridden.
+
 ## 1.2.0
 
 - **Persistent user-level systemd (Linux)**: user-scoped installs now

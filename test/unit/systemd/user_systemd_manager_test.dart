@@ -93,12 +93,28 @@ void main() {
     expect(probe.environment, {'XDG_RUNTIME_DIR': '/run/user/1000'});
   });
 
-  test('uses XDG_RUNTIME_DIR from the environment when set', () async {
+  test('honours XDG_RUNTIME_DIR when it matches the current uid', () async {
     final status = await manager(
-      systemdHost(),
+      systemdHost(uid: '42'),
       environment: {'XDG_RUNTIME_DIR': '/run/user/42'},
     ).ensurePersistentUserSystemd();
     expect(status.runtimeDirectory, '/run/user/42');
+    expect(status.warnings, isEmpty);
+  });
+
+  test('overrides an inherited XDG_RUNTIME_DIR from another user', () async {
+    // The real-world failure: process is uid 1004 but inherited uid 1001's
+    // runtime dir (sudo/su), which routes to the wrong bus.
+    final runner = systemdHost(username: 'menusites', uid: '1004');
+    final status = await manager(
+      runner,
+      environment: {'XDG_RUNTIME_DIR': '/run/user/1001'},
+    ).ensurePersistentUserSystemd();
+    expect(status.runtimeDirectory, '/run/user/1004');
+    expect(status.warnings.join('\n'), contains('different user'));
+    // The bus probe used the corrected directory, not the inherited one.
+    final probe = runner.runs.firstWhere((r) => r.args.contains('status'));
+    expect(probe.environment, {'XDG_RUNTIME_DIR': '/run/user/1004'});
   });
 
   group('lingering', () {
@@ -144,6 +160,7 @@ void main() {
       'Failed to connect to bus: No medium found',
       'Failed to connect to bus: No such file or directory',
       'Failed to connect to bus: Connection refused',
+      'Failed to connect to bus: Permission denied',
     ]) {
       test('detects "$message"', () async {
         final status = await manager(
@@ -154,6 +171,16 @@ void main() {
         expect(status.warnings.join('\n'), contains(message));
       });
     }
+
+    test('permission-denied gives a "are you the right user" hint', () async {
+      final status = await manager(
+        systemdHost(
+          username: 'menusites',
+          busStderr: 'Failed to connect to bus: Permission denied\n',
+        ),
+      ).ensurePersistentUserSystemd();
+      expect(status.warnings.join('\n'), contains('running as menusites'));
+    });
 
     test('detects a generic bus failure line', () async {
       final status = await manager(
@@ -198,15 +225,25 @@ void main() {
   });
 
   test(
-    'resolveRuntimeDirectory prefers env, falls back to /run/user',
+    'resolveRuntimeDirectory is /run/user/<uid>, honouring only a matching env',
     () async {
+      // env matches uid -> honoured
       expect(
         await manager(
-          systemdHost(),
+          systemdHost(uid: '7'),
           environment: {'XDG_RUNTIME_DIR': '/run/user/7'},
         ).resolveRuntimeDirectory(),
         '/run/user/7',
       );
+      // env points at another uid -> ignored
+      expect(
+        await manager(
+          systemdHost(uid: '1000'),
+          environment: {'XDG_RUNTIME_DIR': '/run/user/1001'},
+        ).resolveRuntimeDirectory(),
+        '/run/user/1000',
+      );
+      // env unset -> derived from uid
       expect(
         await manager(systemdHost(uid: '1000')).resolveRuntimeDirectory(),
         '/run/user/1000',
