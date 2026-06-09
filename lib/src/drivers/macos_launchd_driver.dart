@@ -1,14 +1,15 @@
 import 'dart:io';
 
-import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import '../errors/service_exception.dart';
 import '../logging/service_logger.dart';
+import '../models/restart_policy.dart';
 import '../models/service_descriptor.dart';
 import '../models/service_scope.dart';
 import '../models/service_status.dart';
 import '../process/process_runner.dart';
+import 'permission_classifier.dart';
 import 'platform_service_driver.dart';
 
 /// A [PlatformServiceDriver] for macOS that manages services through launchd.
@@ -47,16 +48,20 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
   @override
   bool get supportsPauseResume => false;
 
+  @override
+  bool get supportsEnvironmentFile => false;
+
   /// The absolute path of the generated `.plist` for [service].
   String plistPath(ServiceDescriptor service) =>
       p.join(_agentsDirectory(service.scope), '${service.launchdLabel}.plist');
 
   @override
   Future<void> install(ServiceDescriptor service) async {
+    final rendered = render(service); // validates env-file support up front
     final dir = Directory(_agentsDirectory(service.scope));
     try {
       dir.createSync(recursive: true);
-      File(plistPath(service)).writeAsStringSync(buildPlist(service));
+      File(plistPath(service)).writeAsStringSync(rendered);
     } on IOException catch (e) {
       throw ServiceInstallationException(
         'Failed to write launchd plist for ${service.qualifiedName}',
@@ -69,9 +74,11 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
       plistPath(service),
     ]);
     if (!result.succeeded) {
-      throw ServiceInstallationException(
+      _fail(
+        result,
         'launchctl load failed (exit ${result.exitCode}): '
         '${result.stderr.trim()}',
+        ServiceInstallationException.new,
       );
     }
     logger.info('Installed launchd service ${service.launchdLabel}');
@@ -103,9 +110,11 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
       service.launchdLabel,
     ]);
     if (!result.succeeded) {
-      throw ServiceStartException(
+      _fail(
+        result,
         'launchctl start failed (exit ${result.exitCode}): '
         '${result.stderr.trim()}',
+        ServiceStartException.new,
       );
     }
   }
@@ -117,9 +126,11 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
       service.launchdLabel,
     ]);
     if (!result.succeeded) {
-      throw ServiceStopException(
+      _fail(
+        result,
         'launchctl stop failed (exit ${result.exitCode}): '
         '${result.stderr.trim()}',
+        ServiceStopException.new,
       );
     }
   }
@@ -157,9 +168,19 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
   }
 
   /// Renders the launchd plist for [service].
-  @visibleForTesting
-  String buildPlist(ServiceDescriptor service) {
+  ///
+  /// Throws [PlatformNotSupportedException] if the descriptor sets an
+  /// `environmentFile` (launchd has no native equivalent).
+  @override
+  String render(ServiceDescriptor service) {
+    if (service.environmentFile != null) {
+      throw const PlatformNotSupportedException(
+        'launchd has no environment-file support; inline environment instead.',
+      );
+    }
     final args = [service.executablePath, ...service.arguments];
+    final workingDir =
+        service.workingDirectory ?? p.dirname(service.executablePath);
     final buffer = StringBuffer()
       ..writeln('<?xml version="1.0" encoding="UTF-8"?>')
       ..writeln(
@@ -178,13 +199,19 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
     buffer
       ..writeln('  </array>')
       ..writeln('  <key>RunAtLoad</key>')
-      ..writeln('  <true/>')
-      ..writeln('  <key>KeepAlive</key>')
-      ..writeln('  <true/>')
+      ..writeln('  ${service.autoStart ? '<true/>' : '<false/>'}')
+      ..writeln('  <key>KeepAlive</key>');
+    _writeKeepAlive(buffer, service.restart);
+    buffer
       ..writeln('  <key>WorkingDirectory</key>')
-      ..writeln(
-        '  <string>${_xml(p.dirname(service.executablePath))}</string>',
-      );
+      ..writeln('  <string>${_xml(workingDir)}</string>');
+    // A non-default restart delay maps to the minimum respawn interval; left
+    // off at the default so the plist is byte-identical to earlier releases.
+    if (service.restartDelay.inSeconds != 5) {
+      buffer
+        ..writeln('  <key>ThrottleInterval</key>')
+        ..writeln('  <integer>${service.restartDelay.inSeconds}</integer>');
+    }
     if (service.environment.isNotEmpty) {
       buffer
         ..writeln('  <key>EnvironmentVariables</key>')
@@ -196,10 +223,41 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
       });
       buffer.writeln('  </dict>');
     }
+    if (service.stopTimeout != null) {
+      buffer
+        ..writeln('  <key>ExitTimeOut</key>')
+        ..writeln('  <integer>${service.stopTimeout!.inSeconds}</integer>');
+    }
     buffer
       ..writeln('</dict>')
       ..writeln('</plist>');
     return buffer.toString();
+  }
+
+  /// Writes the launchd `KeepAlive` value for [policy]: `<true/>` for always,
+  /// a `{SuccessfulExit: false}` dict for on-failure, `<false/>` for never.
+  void _writeKeepAlive(StringBuffer buffer, RestartPolicy policy) {
+    switch (policy) {
+      case RestartPolicy.always:
+        buffer.writeln('  <true/>');
+      case RestartPolicy.never:
+        buffer.writeln('  <false/>');
+      case RestartPolicy.onFailure:
+        buffer
+          ..writeln('  <dict>')
+          ..writeln('    <key>SuccessfulExit</key>')
+          ..writeln('    <false/>')
+          ..writeln('  </dict>');
+    }
+  }
+
+  Never _fail(
+    ProcessRunResult result,
+    String message,
+    ServiceManagerException Function(String, {Object? cause}) onError,
+  ) {
+    if (isPermissionFailure(result)) throw PermissionDeniedException(message);
+    throw onError(message);
   }
 
   ServiceStatus _parseListOutput(String output) {

@@ -1,14 +1,15 @@
 import 'dart:io';
 
-import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import '../errors/service_exception.dart';
 import '../logging/service_logger.dart';
+import '../models/restart_policy.dart';
 import '../models/service_descriptor.dart';
 import '../models/service_scope.dart';
 import '../models/service_status.dart';
 import '../process/process_runner.dart';
+import 'permission_classifier.dart';
 import 'platform_service_driver.dart';
 
 /// A [PlatformServiceDriver] for Linux that manages services through systemd.
@@ -47,6 +48,9 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
   @override
   bool get supportsPauseResume => false;
 
+  @override
+  bool get supportsEnvironmentFile => true;
+
   /// The absolute path of the generated `.service` unit for [service].
   String unitPath(ServiceDescriptor service) =>
       p.join(_unitDirectory(service.scope), '${service.systemName}.service');
@@ -56,7 +60,7 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
     final dir = Directory(_unitDirectory(service.scope));
     try {
       dir.createSync(recursive: true);
-      File(unitPath(service)).writeAsStringSync(buildUnitFile(service));
+      File(unitPath(service)).writeAsStringSync(render(service));
     } on IOException catch (e) {
       throw ServiceInstallationException(
         'Failed to write systemd unit for ${service.qualifiedName}',
@@ -68,11 +72,14 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
       service.scope,
       ServiceInstallationException.new,
     );
-    await _run(
-      ['enable', service.systemName],
-      service.scope,
-      ServiceInstallationException.new,
-    );
+    // `enable` creates the boot/login symlink; skip it for non-autostart units.
+    if (service.autoStart) {
+      await _run(
+        ['enable', service.systemName],
+        service.scope,
+        ServiceInstallationException.new,
+      );
+    }
     logger.info('Installed systemd unit ${unitPath(service)}');
   }
 
@@ -144,8 +151,8 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
   }
 
   /// Renders the systemd unit file for [service].
-  @visibleForTesting
-  String buildUnitFile(ServiceDescriptor service) {
+  @override
+  String render(ServiceDescriptor service) {
     final exec = [
       service.executablePath,
       ...service.arguments,
@@ -153,6 +160,8 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
     final wantedBy = service.scope == ServiceScope.system
         ? 'multi-user.target'
         : 'default.target';
+    final workingDir =
+        service.workingDirectory ?? p.dirname(service.executablePath);
     final buffer = StringBuffer()
       ..writeln('[Unit]')
       ..writeln('Description=${service.description}')
@@ -161,18 +170,31 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
       ..writeln('[Service]')
       ..writeln('Type=simple')
       ..writeln('ExecStart=$exec')
-      ..writeln('WorkingDirectory=${p.dirname(service.executablePath)}')
-      ..writeln('Restart=always')
-      ..writeln('RestartSec=5');
-    service.environment.forEach((k, v) {
-      buffer.writeln('Environment="$k=$v"');
-    });
+      ..writeln('WorkingDirectory=$workingDir')
+      ..writeln('Restart=${_restartValue(service.restart)}')
+      ..writeln('RestartSec=${service.restartDelay.inSeconds}');
+    if (service.stopTimeout != null) {
+      buffer.writeln('TimeoutStopSec=${service.stopTimeout!.inSeconds}');
+    }
+    if (service.environmentFile != null) {
+      buffer.writeln('EnvironmentFile=${service.environmentFile}');
+    } else {
+      service.environment.forEach((k, v) {
+        buffer.writeln('Environment="$k=$v"');
+      });
+    }
     buffer
       ..writeln()
       ..writeln('[Install]')
       ..writeln('WantedBy=$wantedBy');
     return buffer.toString();
   }
+
+  static String _restartValue(RestartPolicy policy) => switch (policy) {
+    RestartPolicy.always => 'always',
+    RestartPolicy.onFailure => 'on-failure',
+    RestartPolicy.never => 'no',
+  };
 
   ServiceStatus _mapStatus(String raw, ServiceDescriptor service) {
     switch (raw) {
@@ -225,10 +247,13 @@ final class LinuxSystemdDriver implements PlatformServiceDriver {
   }) async {
     final result = await _systemctl(args, scope);
     if (!result.succeeded && !allowFailure) {
-      throw onError(
-        'systemctl ${args.join(' ')} failed (exit ${result.exitCode}): '
-        '${result.stderr.trim()}',
-      );
+      final message =
+          'systemctl ${args.join(' ')} failed (exit ${result.exitCode}): '
+          '${result.stderr.trim()}';
+      if (isPermissionFailure(result)) {
+        throw PermissionDeniedException(message);
+      }
+      throw onError(message);
     }
   }
 

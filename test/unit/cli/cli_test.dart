@@ -249,4 +249,66 @@ dart_services:
     final code = await cli(['frobnicate']);
     expect(code, 64);
   });
+
+  group('imperative install (--executable)', () {
+    late String exe;
+    setUp(() {
+      exe = p.join(root.path, 'myapp');
+      File(exe).writeAsStringSync('binary');
+    });
+
+    test(
+      'installs a pre-built executable with policy and passthrough args',
+      () async {
+        final code = await cli([
+          'install',
+          'myapp:hub',
+          '--executable',
+          exe,
+          '--restart',
+          'on-failure',
+          '--no-auto-start',
+          '--',
+          'hub',
+          'start',
+        ]);
+        expect(code, 0);
+        final entry = (await registry.find('myapp', 'hub'))!;
+        expect(entry.binaryPath, p.absolute(exe));
+        expect(entry.arguments, ['hub', 'start']);
+        expect(entry.restart, RestartPolicy.onFailure);
+        expect(entry.autoStart, isFalse);
+      },
+    );
+
+    test('--start-now starts the service', () async {
+      await cli(['install', 'myapp:hub', '--executable', exe, '--start-now']);
+      expect(driver.operations, contains('start:myapp:hub'));
+    });
+
+    test('--dry-run prints the definition and installs nothing', () async {
+      final code = await cli([
+        'install',
+        'myapp:hub',
+        '--executable',
+        exe,
+        '--dry-run',
+      ]);
+      expect(code, 0);
+      expect(out.toString(), contains('rendered:'));
+      expect(await registry.find('myapp', 'hub'), isNull);
+    });
+
+    test('--dry-run without --executable is a usage error', () async {
+      expect(await cli(['install', 'analytics', '--dry-run']), 64);
+    });
+
+    test('--executable with a bare package is a usage error', () async {
+      expect(await cli(['install', 'analytics', '--executable', exe]), 64);
+    });
+
+    test('passthrough args without --executable is a usage error', () async {
+      expect(await cli(['install', 'analytics', '--', 'x']), 64);
+    });
+  });
 }

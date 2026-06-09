@@ -2,6 +2,77 @@ import 'package:dart_service_manager/dart_service_manager.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('ServiceManifest.parse policy keys', () {
+    test('parses an executable entry with policy', () {
+      final m = ServiceManifest.parse('p', {
+        'api': {
+          'executable': 'build/api',
+          'restart': 'on-failure',
+          'restartDelay': 12,
+          'autoStart': false,
+          'stopTimeout': 8,
+          'workingDirectory': '/srv',
+          'envFile': '/etc/api.env',
+        },
+      });
+      final def = m.require('api');
+      expect(def.isPrebuilt, isTrue);
+      expect(def.executable, 'build/api');
+      expect(def.script, isNull);
+      expect(def.restart, RestartPolicy.onFailure);
+      expect(def.restartDelay, const Duration(seconds: 12));
+      expect(def.autoStart, isFalse);
+      expect(def.stopTimeout, const Duration(seconds: 8));
+      expect(def.workingDirectory, '/srv');
+      expect(def.environmentFile, '/etc/api.env');
+    });
+
+    test('throws when both script and executable are set', () {
+      expect(
+        () => ServiceManifest.parse('p', {
+          's': {'script': 'bin/s.dart', 'executable': 'build/s'},
+        }),
+        throwsA(isA<ServiceManifestException>()),
+      );
+    });
+
+    test('throws when neither script nor executable is set', () {
+      expect(
+        () => ServiceManifest.parse('p', {
+          's': {'restart': 'always'},
+        }),
+        throwsA(isA<ServiceManifestException>()),
+      );
+    });
+
+    test('throws on a bad restart value', () {
+      expect(
+        () => ServiceManifest.parse('p', {
+          's': {'script': 'bin/s.dart', 'restart': 'sometimes'},
+        }),
+        throwsA(isA<ServiceManifestException>()),
+      );
+    });
+
+    test('throws on a non-integer restartDelay', () {
+      expect(
+        () => ServiceManifest.parse('p', {
+          's': {'script': 'bin/s.dart', 'restartDelay': 'soon'},
+        }),
+        throwsA(isA<ServiceManifestException>()),
+      );
+    });
+
+    test('throws on a non-boolean autoStart', () {
+      expect(
+        () => ServiceManifest.parse('p', {
+          's': {'script': 'bin/s.dart', 'autoStart': 'yes-please'},
+        }),
+        throwsA(isA<ServiceManifestException>()),
+      );
+    });
+  });
+
   group('ServiceManifest.parse', () {
     test('parses the shorthand script form', () {
       final manifest = ServiceManifest.parse('analytics', {

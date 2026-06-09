@@ -103,4 +103,63 @@ void main() {
       throwsA(isA<ServiceInstallationException>()),
     );
   });
+
+  test('does not support environment files', () {
+    expect(driver.supportsEnvironmentFile, isFalse);
+  });
+
+  test('autoStart false uses start= demand', () async {
+    await driver.install(descriptor().copyWith(autoStart: false));
+    final create = runner.runs.first;
+    expect(create.args, containsAllInOrder(['start=', 'demand']));
+  });
+
+  test('configures SCM failure actions for restart policy', () async {
+    await driver.install(
+      descriptor().copyWith(restartDelay: const Duration(seconds: 7)),
+    );
+    final failure = runner.runs.firstWhere((r) => r.args.first == 'failure');
+    expect(failure.args, contains('reset='));
+    expect(failure.args, contains('7'));
+    expect(failure.args, contains('restart/7000'));
+  });
+
+  test('never restart configures empty failure actions', () async {
+    await driver.install(descriptor().copyWith(restart: RestartPolicy.never));
+    final failure = runner.runs.firstWhere((r) => r.args.first == 'failure');
+    expect(failure.args, contains(''));
+  });
+
+  test('render returns the sc create command line', () {
+    final line = driver.render(descriptor());
+    expect(line, contains('create dart_analytics_worker'));
+    expect(line, contains('start= auto'));
+  });
+
+  test('render and install reject an environment file', () {
+    final svc = descriptor().copyWith(environmentFile: r'C:\x.env');
+    expect(
+      () => driver.render(svc),
+      throwsA(isA<PlatformNotSupportedException>()),
+    );
+    expect(
+      () => driver.install(svc),
+      throwsA(isA<PlatformNotSupportedException>()),
+    );
+  });
+
+  test('maps access-denied to PermissionDeniedException', () {
+    final denied = WindowsServiceDriver(
+      processRunner: FakeProcessRunner(
+        defaultResult: const ProcessRunResult(
+          exitCode: 5,
+          stderr: 'Access is denied.',
+        ),
+      ),
+    );
+    expect(
+      () => denied.start(descriptor()),
+      throwsA(isA<PermissionDeniedException>()),
+    );
+  });
 }

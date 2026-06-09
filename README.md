@@ -93,6 +93,22 @@ dart_services:
   monitor: bin/monitor.dart
 ```
 
+A service entry may also reference a **pre-built `executable:`** instead of a
+`script:` (skipping compilation), and set runtime policy: `workingDirectory`,
+`restart` (`always`/`on-failure`/`never`), `restartDelay`, `autoStart`,
+`stopTimeout`, and `envFile`:
+
+```yaml
+dart_services:
+  api:
+    executable: build/api          # already-built binary, not compiled
+    args: ['--port', '8080']
+    restart: on-failure
+    restartDelay: 10
+    autoStart: true
+    envFile: /etc/api.env           # systemd EnvironmentFile=
+```
+
 See [`example/sample_package`](example/sample_package) for a runnable package.
 
 ## Requirements
@@ -109,7 +125,7 @@ See [`example/sample_package`](example/sample_package) for a runnable package.
 ```yaml
 # pubspec.yaml
 dev_dependencies:
-  dart_service_manager: ^1.0.0
+  dart_service_manager: ^1.1.0
 ```
 
 ```bash
@@ -126,6 +142,13 @@ dart-service install analytics_server
 
 # Install one service, system-wide, from an explicit path.
 dart-service --scope system install analytics_server:worker --path ./analytics_server
+
+# Install an already-built executable as a service (args after `--`).
+dart-service install myapp:hub --executable /usr/local/bin/myapp \
+  --restart on-failure --env-file /etc/myapp/hub.env -- hub start
+
+# Preview the generated unit/plist without installing.
+dart-service install myapp:hub --executable /usr/local/bin/myapp --dry-run -- hub start
 
 # Lifecycle.
 dart-service start   analytics_server:worker
@@ -178,10 +201,37 @@ Future<void> main() async {
 }
 ```
 
+### Installing an existing executable (imperative)
+
+Install an already-built binary — including the **currently running program** —
+as a service, with explicit arguments, environment and runtime policy, without a
+manifest or compilation. This is the path for a CLI that installs itself:
+
+```dart
+final descriptor = ServiceDescriptor.forCurrentExecutable(
+  packageName: 'myapp',
+  serviceName: 'hub',
+  arguments: ['hub', 'start', '--config', '/etc/myapp/hub.yaml'],
+  scope: ServiceScope.system,
+  restart: RestartPolicy.onFailure,
+  environmentFile: '/etc/myapp/hub.env', // systemd; secrets stay out of the unit
+);
+
+// Preview the generated unit/plist without touching the system:
+print(manager.renderDefinition(descriptor));
+
+await manager.installDescriptor(descriptor, startNow: true);
+// later, change flags and re-apply (preserves running state):
+await manager.reconfigure(descriptor.copyWith(arguments: ['hub', 'start', '-v']));
+```
+
 ### Core API
 
 ```dart
 Future<void> install(String package, {String? serviceName, ServiceScope scope = ServiceScope.user, String? path, bool force = false});
+Future<void> installDescriptor(ServiceDescriptor descriptor, {bool startNow = false, bool force = false});
+Future<void> reconfigure(ServiceDescriptor descriptor);
+String renderDefinition(ServiceDescriptor descriptor);
 Future<void> uninstall(String package, {String? serviceName});
 Future<void> start(String package, String service);
 Future<void> stop(String package, String service);

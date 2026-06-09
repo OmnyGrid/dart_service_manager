@@ -4,7 +4,7 @@ description: >-
   install and manage them as native operating-system services on Linux
   (systemd), macOS (launchd) and Windows (SCM). Ships a reusable library and a
   thin `dart-service` CLI behind a first-class Dart API.
-version: 1.0.0
+version: 1.1.0
 repository: https://github.com/OmnyGrid/dart_service_manager
 
 environment:

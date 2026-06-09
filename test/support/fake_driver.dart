@@ -9,8 +9,15 @@ class FakeServiceDriver implements PlatformServiceDriver {
   @override
   final bool supportsPauseResume;
 
+  @override
+  final bool supportsEnvironmentFile;
+
   /// The operations performed, as `verb:systemName` strings, in order.
   final List<String> operations = [];
+
+  /// The descriptors passed to [install], in order — lets tests assert that the
+  /// full descriptor (args/env/policy) reached the driver.
+  final List<ServiceDescriptor> installed = [];
 
   /// The status returned by [status], keyed by qualified service name.
   final Map<String, ServiceStatus> statuses = {};
@@ -25,6 +32,7 @@ class FakeServiceDriver implements PlatformServiceDriver {
   FakeServiceDriver({
     this.platform = 'linux',
     this.supportsPauseResume = false,
+    this.supportsEnvironmentFile = false,
     this.defaultStatus = ServiceStatus.running,
     this.throwOnStatus = false,
   });
@@ -33,8 +41,13 @@ class FakeServiceDriver implements PlatformServiceDriver {
       operations.add('$verb:${s.qualifiedName}');
 
   @override
-  Future<void> install(ServiceDescriptor service) async =>
-      _record('install', service);
+  String render(ServiceDescriptor service) => 'rendered:${service.systemName}';
+
+  @override
+  Future<void> install(ServiceDescriptor service) async {
+    installed.add(service);
+    _record('install', service);
+  }
 
   @override
   Future<void> uninstall(ServiceDescriptor service) async =>

@@ -1,7 +1,10 @@
 import 'package:args/command_runner.dart';
+import 'package:path/path.dart' as p;
 
 import '../manager/dart_service_manager.dart';
 import '../models/dart_package_service.dart';
+import '../models/restart_policy.dart';
+import '../models/service_descriptor.dart';
 import '../models/service_scope.dart';
 import '../util/service_ref.dart';
 import 'cli_runner.dart';
@@ -52,26 +55,146 @@ abstract class ServiceCommand extends Command<int> {
   }
 }
 
-/// `install <package[:service]>` — compile and install services.
+/// `install <package[:service]>` — compile and install services, or install a
+/// pre-built executable with `--executable`.
 class InstallCommand extends ServiceCommand {
-  InstallCommand(super.factory, super.out);
+  InstallCommand(super.factory, super.out) {
+    argParser
+      ..addOption(
+        'executable',
+        abbr: 'e',
+        help:
+            'Install this pre-built executable as a service instead of '
+            'compiling a package script. Requires a package:service reference; '
+            'arguments after `--` are passed to the service.',
+      )
+      ..addFlag(
+        'start-now',
+        negatable: false,
+        help: 'Start the service immediately after installing.',
+      )
+      ..addFlag(
+        'dry-run',
+        negatable: false,
+        help:
+            'Print the rendered service definition without installing '
+            '(requires --executable).',
+      )
+      ..addFlag(
+        'force',
+        negatable: false,
+        help: 'Replace an existing installation.',
+      )
+      ..addOption(
+        'restart',
+        allowed: ['always', 'on-failure', 'never'],
+        defaultsTo: 'always',
+        help: 'Restart policy (--executable installs).',
+      )
+      ..addOption(
+        'restart-delay',
+        defaultsTo: '5',
+        help: 'Seconds to wait between restarts (--executable installs).',
+      )
+      ..addOption(
+        'working-dir',
+        help: 'Working directory for the service (--executable installs).',
+      )
+      ..addOption(
+        'env-file',
+        help: 'Environment file to load, systemd only (--executable installs).',
+      )
+      ..addFlag(
+        'auto-start',
+        defaultsTo: true,
+        help:
+            'Enable the service at boot/login (use --no-auto-start to '
+            'disable).',
+      );
+  }
 
   @override
   String get name => 'install';
   @override
   String get description =>
-      'Compile and install one or all services of a package.';
+      'Compile and install package services, or install a pre-built executable.';
   @override
-  String get invocation => 'dart-service install <package[:service]>';
+  String get invocation =>
+      'dart-service install <package[:service]> [--executable <path> [-- args…]]';
 
   @override
   Future<int> run() async {
-    final ref = ServiceRef.parse(requireRef());
-    await manager.install(
-      ref.package,
-      serviceName: ref.service,
+    final args = argResults!;
+    final rest = args.rest;
+    if (rest.isEmpty) {
+      throw UsageException(
+        'Expected a "package" or "package:service" argument.',
+        usage,
+      );
+    }
+    final ref = ServiceRef.parse(rest.first);
+    final passthrough = rest.skip(1).toList();
+    final executable = args['executable'] as String?;
+    final dryRun = args['dry-run'] as bool;
+    final force = args['force'] as bool;
+
+    // Declarative install from the package manifest.
+    if (executable == null) {
+      if (dryRun) {
+        throw UsageException(
+          '--dry-run is only supported together with --executable.',
+          usage,
+        );
+      }
+      if (passthrough.isNotEmpty) {
+        throw UsageException(
+          'Service arguments after `--` require --executable.',
+          usage,
+        );
+      }
+      await manager.install(
+        ref.package,
+        serviceName: ref.service,
+        scope: scope,
+        path: path,
+        force: force,
+      );
+      out.writeln('Installed $ref (scope: ${scope.name}).');
+      return 0;
+    }
+
+    // Imperative install of a pre-built executable.
+    if (ref.service == null) {
+      throw UsageException(
+        '--executable requires a "package:service" reference.',
+        usage,
+      );
+    }
+    final descriptor = ServiceDescriptor(
+      packageName: ref.package,
+      serviceName: ref.service!,
+      executablePath: p.absolute(executable),
       scope: scope,
-      path: path,
+      arguments: passthrough,
+      restart:
+          RestartPolicy.tryParse(args['restart'] as String) ??
+          RestartPolicy.always,
+      restartDelay: Duration(
+        seconds: int.tryParse(args['restart-delay'] as String) ?? 5,
+      ),
+      autoStart: args['auto-start'] as bool,
+      workingDirectory: args['working-dir'] as String?,
+      environmentFile: args['env-file'] as String?,
+    );
+
+    if (dryRun) {
+      out.writeln(manager.renderDefinition(descriptor));
+      return 0;
+    }
+    await manager.installDescriptor(
+      descriptor,
+      startNow: args['start-now'] as bool,
+      force: force,
     );
     out.writeln('Installed $ref (scope: ${scope.name}).');
     return 0;

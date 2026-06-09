@@ -67,8 +67,21 @@ void main() {
         PlatformNotSupportedException() => 'platform',
         ServiceManifestException() => 'manifest',
         ServiceNotFoundException() => 'notfound',
+        PermissionDeniedException() => 'permission',
+        ServiceAlreadyInstalledException() => 'already',
       };
       expect(label, 'stop');
+    });
+
+    test('new subtypes carry their codes', () {
+      expect(
+        const PermissionDeniedException('x').code,
+        ErrorCodes.permissionDenied,
+      );
+      expect(
+        const ServiceAlreadyInstalledException('x').code,
+        ErrorCodes.alreadyInstalled,
+      );
     });
   });
 }

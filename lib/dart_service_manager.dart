@@ -13,6 +13,7 @@ export 'src/manager/dart_service_manager.dart';
 
 // Models.
 export 'src/models/dart_package_service.dart';
+export 'src/models/restart_policy.dart';
 export 'src/models/service_descriptor.dart';
 export 'src/models/service_install_config.dart';
 export 'src/models/service_scope.dart';

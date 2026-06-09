@@ -104,5 +104,53 @@ void main() {
       };
       expect(RegistryEntry.fromJson(json).scope, ServiceScope.user);
     });
+
+    test('round-trips the full descriptor (args/env/policy)', () {
+      final entry = RegistryEntry(
+        packageName: 'a',
+        serviceName: 's',
+        platform: 'linux',
+        scope: ServiceScope.user,
+        binaryPath: '/bin/s',
+        installedAt: DateTime.utc(2026),
+        arguments: ['--x', '1'],
+        environment: {'K': 'v'},
+        description: 'desc',
+        workingDirectory: '/srv',
+        restart: RestartPolicy.onFailure,
+        restartDelay: const Duration(seconds: 12),
+        autoStart: false,
+        stopTimeout: const Duration(seconds: 9),
+        environmentFile: '/etc/s.env',
+      );
+      final decoded = RegistryEntry.fromJson(entry.toJson());
+      expect(decoded.arguments, ['--x', '1']);
+      expect(decoded.environment, {'K': 'v'});
+      expect(decoded.description, 'desc');
+      expect(decoded.workingDirectory, '/srv');
+      expect(decoded.restart, RestartPolicy.onFailure);
+      expect(decoded.restartDelay, const Duration(seconds: 12));
+      expect(decoded.autoStart, isFalse);
+      expect(decoded.stopTimeout, const Duration(seconds: 9));
+      expect(decoded.environmentFile, '/etc/s.env');
+    });
+
+    test('a pre-1.1.0 entry without policy keys loads with defaults', () {
+      final json = {
+        'package': 'a',
+        'service': 's',
+        'platform': 'linux',
+        'scope': 'user',
+        'binary': '/bin/s',
+        'installedAt': DateTime.utc(2026).toIso8601String(),
+        'status': 'running',
+      };
+      final e = RegistryEntry.fromJson(json);
+      expect(e.arguments, isEmpty);
+      expect(e.environment, isEmpty);
+      expect(e.restart, RestartPolicy.always);
+      expect(e.restartDelay, const Duration(seconds: 5));
+      expect(e.autoStart, isTrue);
+    });
   });
 }

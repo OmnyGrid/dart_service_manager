@@ -30,4 +30,11 @@ final class ErrorCodes {
 
   /// A referenced package, service or registry entry does not exist.
   static const String notFound = 'not_found';
+
+  /// An operation failed because it requires elevated (root/administrator)
+  /// privileges.
+  static const String permissionDenied = 'permission_denied';
+
+  /// An install was attempted for a service that is already installed.
+  static const String alreadyInstalled = 'already_installed';
 }

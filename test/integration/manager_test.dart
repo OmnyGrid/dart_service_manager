@@ -244,4 +244,87 @@ dart_services:
       ServiceStatus.running,
     );
   });
+
+  ServiceDescriptor descriptor() => ServiceDescriptor(
+    packageName: 'svc',
+    serviceName: 'api',
+    executablePath: '/opt/bin/api',
+    arguments: ['--port', '8080'],
+    environment: {'LOG': 'debug'},
+    restart: RestartPolicy.onFailure,
+  );
+
+  test('installDescriptor installs without a manifest or compiler', () async {
+    await manager.installDescriptor(descriptor(), startNow: true);
+    expect(driver.installed.single.qualifiedName, 'svc:api');
+    expect(driver.operations, contains('start:svc:api'));
+    final entry = (await registry.find('svc', 'api'))!;
+    expect(entry.arguments, ['--port', '8080']);
+    expect(entry.environment, {'LOG': 'debug'});
+    expect(entry.restart, RestartPolicy.onFailure);
+    expect(entry.binaryPath, '/opt/bin/api');
+  });
+
+  test(
+    'installDescriptor rebuilds the full descriptor for lifecycle',
+    () async {
+      await manager.installDescriptor(descriptor());
+      // The descriptor handed to start/stop carries args/env/policy from the
+      // registry, not a stripped version.
+      await manager.start('svc', 'api');
+      final started = driver.installed.first; // install descriptor
+      expect(started.arguments, ['--port', '8080']);
+      final status = await manager.status('svc', 'api');
+      expect(status, isA<ServiceStatus>());
+    },
+  );
+
+  test('installDescriptor rejects an already-installed service', () async {
+    await manager.installDescriptor(descriptor());
+    expect(
+      () => manager.installDescriptor(descriptor()),
+      throwsA(isA<ServiceAlreadyInstalledException>()),
+    );
+    // force replaces it.
+    await manager.installDescriptor(descriptor(), force: true);
+    expect(await registry.byPackage('svc'), hasLength(1));
+  });
+
+  test('reconfigure re-applies a changed descriptor', () async {
+    await manager.installDescriptor(descriptor());
+    driver.defaultStatus = ServiceStatus.running;
+    await manager.reconfigure(
+      descriptor().copyWith(arguments: ['--port', '9090']),
+    );
+    expect((await registry.find('svc', 'api'))!.arguments, ['--port', '9090']);
+    expect(driver.operations, contains('restart:svc:api'));
+  });
+
+  test('reconfigure requires an existing service', () {
+    expect(
+      () => manager.reconfigure(descriptor()),
+      throwsA(isA<ServiceNotFoundException>()),
+    );
+  });
+
+  test('renderDefinition delegates to the driver', () {
+    expect(manager.renderDefinition(descriptor()), 'rendered:dart_svc_api');
+  });
+
+  test(
+    'declarative install with a manifest executable skips compilation',
+    () async {
+      final prebuilt = File(p.join(packageRoot.path, 'bin', 'prebuilt'))
+        ..writeAsStringSync('binary');
+      File(p.join(packageRoot.path, 'pubspec.yaml')).writeAsStringSync('''
+name: analytics
+dart_services:
+  api:
+    executable: bin/prebuilt
+''');
+      await manager.install('analytics', path: packageRoot.path);
+      final entry = (await registry.find('analytics', 'api'))!;
+      expect(entry.binaryPath, prebuilt.absolute.path);
+    },
+  );
 }
