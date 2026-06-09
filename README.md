@@ -109,7 +109,8 @@ dart_services:
     envFile: /etc/api.env           # systemd EnvironmentFile=
 ```
 
-See [`example/sample_package`](example/sample_package) for a runnable package.
+See [`example/sample_package`](example/sample_package) for a runnable package, or
+[`example/shelf_server`](example/shelf_server) for a real Shelf HTTP server managed as a service.
 
 ## Requirements
 
@@ -161,9 +162,15 @@ dart-service list
 dart-service packages
 dart-service services analytics_server
 
-# Remove.
-dart-service uninstall analytics_server:worker
+# Remove one service, or every service of the package.
+dart-service uninstall analytics_server:worker   # just the worker
+dart-service uninstall analytics_server          # all services of the package
 ```
+
+> A bare `package` reference (no `:service`) targets **every** service the
+> package installed — this works for `install`, `start`, `stop`, `pause`,
+> `resume`, `restart` and `uninstall`. Use `package:service` to target one.
+> Uninstalling also deletes each service's cached native binary.
 
 Full command reference: [`doc/cli.md`](doc/cli.md).
 

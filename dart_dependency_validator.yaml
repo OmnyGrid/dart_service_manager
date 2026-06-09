@@ -4,3 +4,11 @@
 # analyzer reads at compile time; the validator can miss such usages, so it is
 # allowlisted here.
 allow_pinned_deps: true
+
+# The `example/` subpackages (sample_package, shelf_server) are self-contained
+# Dart packages with their own pubspec.yaml and dependencies (e.g. shelf). They
+# are resolved independently, so they must be excluded from this package's
+# dependency validation.
+exclude:
+  - 'example/sample_package/**'
+  - 'example/shelf_server/**'
