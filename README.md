@@ -117,7 +117,10 @@ See [`example/sample_package`](example/sample_package) for a runnable package, o
 - **Dart SDK 3.x** — required on the machine that installs services, since
   entrypoints are compiled with `dart compile exe`.
 - **Privileges** — `ServiceScope.user` (the default) needs none; `system` scope
-  requires root (Linux/macOS) or Administrator (Windows).
+  requires root (Linux/macOS) or Administrator (Windows). `install` warns if you
+  run it elevated with the default user scope (a common `sudo` mistake), or
+  request `--system` without elevation. Use `--system` as a shorthand for
+  `--scope system`.
 - **Per platform** — systemd (Linux), launchd (macOS) or the Service Control
   Manager (Windows), all present by default on their respective OSes.
 
@@ -126,7 +129,7 @@ See [`example/sample_package`](example/sample_package) for a runnable package, o
 ```yaml
 # pubspec.yaml
 dev_dependencies:
-  dart_service_manager: ^1.1.0
+  dart_service_manager: ^1.2.0
 ```
 
 ```bash

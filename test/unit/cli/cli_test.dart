@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../support/fake_driver.dart';
+import '../../support/fake_privilege_checker.dart';
 import '../../support/fake_process_runner.dart';
 import '../../support/in_memory_registry.dart';
 
@@ -59,6 +60,7 @@ dart_services:
       ),
       registry: registry,
       driver: driver,
+      privilegeChecker: FakePrivilegeChecker(),
     );
     out = StringBuffer();
     err = StringBuffer();
@@ -92,6 +94,20 @@ dart_services:
       packageRoot.path,
       '--scope',
       'system',
+      'install',
+      'analytics:worker',
+    ]);
+    expect(
+      (await registry.find('analytics', 'worker'))!.scope,
+      ServiceScope.system,
+    );
+  });
+
+  test('--system is a shorthand for --scope system', () async {
+    await cli([
+      '--path',
+      packageRoot.path,
+      '--system',
       'install',
       'analytics:worker',
     ]);
@@ -188,6 +204,7 @@ dart_services:
       ),
       registry: registry,
       driver: driver,
+      privilegeChecker: FakePrivilegeChecker(),
     );
     await cli(['--path', packageRoot.path, 'install', 'analytics:worker']);
     expect(await cli(['pause', 'analytics:worker']), 0);

@@ -1,3 +1,13 @@
+## 1.2.0
+
+- **Scope/privilege warning**: `install` now detects a mismatch between the
+  requested scope and the current privilege level — running under `sudo`/root
+  with the default user scope (user services fail as root), or a system-scoped
+  install without elevation — and warns with the fix, then proceeds. Backed by a
+  new injectable `PrivilegeChecker` (`id -u` / `net session`).
+- The CLI now shows warnings by default (info/debug still require `--verbose`).
+- Added `--system` as a shorthand for `--scope system`.
+
 ## 1.1.0
 
 First-class third-party / imperative integration.

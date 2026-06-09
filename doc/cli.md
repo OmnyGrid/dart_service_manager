@@ -21,9 +21,15 @@ Most commands take a reference in one of two forms:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--scope <user\|system>` | `user` | Privilege scope to install under. `system` requires root/administrator. |
+| `--system` | off | Shorthand for `--scope system`. |
 | `--path <dir>` | — | Explicit package directory, overriding name resolution. |
-| `-v, --verbose` | off | Enable debug logging. |
+| `-v, --verbose` | off | Enable debug logging (warnings/errors are always shown). |
 | `-h, --help` | — | Print usage (also `dart-service help <command>`). |
+
+> **Scope/privilege check.** `install` warns when the requested scope does not
+> match your privilege level — e.g. running under `sudo` with the default user
+> scope (user services fail as root), or a `--system` install without root. The
+> warning explains the fix and the install still proceeds.
 
 ## Commands
 
