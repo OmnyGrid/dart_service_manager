@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../compiler/service_compiler.dart';
 import '../drivers/platform_service_driver.dart';
 import '../drivers/service_driver_factory.dart';
+import '../drivers/windows_service_backend.dart';
 import '../errors/service_exception.dart';
 import '../logging/service_logger.dart';
 import '../manifest/manifest_loader.dart';
@@ -12,6 +13,7 @@ import '../manifest/package_resolver.dart';
 import '../manifest/service_manifest.dart';
 import '../models/dart_package_service.dart';
 import '../models/service_descriptor.dart';
+import '../models/service_info.dart';
 import '../models/service_scope.dart';
 import '../models/service_status.dart';
 import '../process/privilege_checker.dart';
@@ -84,6 +86,8 @@ class DartServiceManager {
     ProcessRunner processRunner = const SystemProcessRunner(),
     Directory? workingDirectory,
     StoragePaths? storagePaths,
+    WindowsServiceBackend windowsBackend =
+        WindowsServiceBackend.serviceControlManager,
   }) {
     final paths = storagePaths ?? StoragePaths();
     return DartServiceManager(
@@ -98,6 +102,8 @@ class DartServiceManager {
       driver: ServiceDriverFactory.forCurrentPlatform(
         processRunner: processRunner,
         logger: logger,
+        windowsBackend: windowsBackend,
+        storagePaths: paths,
       ),
       logger: logger,
       privilegeChecker: SystemPrivilegeChecker(runner: processRunner),
@@ -213,6 +219,47 @@ class DartServiceManager {
   /// `--dry-run`.
   String renderDefinition(ServiceDescriptor descriptor) =>
       driver.render(descriptor);
+
+  /// Returns a [ServiceInfo] snapshot for an installed service: its recorded
+  /// parameters, its live status, and the native definition the OS runs it from
+  /// (the actual command — `ExecStart`, the `sc`/`schtasks` action, …).
+  ///
+  /// Throws [ServiceNotFoundException] when the service is not in the registry.
+  Future<ServiceInfo> describe(String packageName, String serviceName) async {
+    final entry = await _requireEntry(packageName, serviceName);
+    final descriptor = _descriptorOf(entry);
+    return ServiceInfo(
+      entry: entry,
+      status: await driver.status(descriptor),
+      definition: driver.render(descriptor),
+    );
+  }
+
+  /// Removes any existing installation of [descriptor]'s service and installs it
+  /// fresh — a clean teardown-then-recreate (which, for drivers that stage the
+  /// runtime, also refreshes the staged binary from [descriptor]'s executable).
+  ///
+  /// Tolerates the service not being installed yet, so it doubles as a plain
+  /// install. When [startNow] is `true` the service is started afterwards.
+  Future<void> reinstall(
+    ServiceDescriptor descriptor, {
+    bool startNow = true,
+  }) async {
+    final existing = await registry.find(
+      descriptor.packageName,
+      descriptor.serviceName,
+    );
+    if (existing != null) {
+      logger.info('Removing ${descriptor.qualifiedName} before reinstall');
+      try {
+        await driver.uninstall(_descriptorOf(existing));
+      } on ServiceNotFoundException {
+        // The OS no longer knows it; the registry record is enough to proceed.
+      }
+      await registry.remove(descriptor.packageName, descriptor.serviceName);
+    }
+    await installDescriptor(descriptor, startNow: startNow, force: true);
+  }
 
   Future<String> _resolveExecutable(
     String packageName,

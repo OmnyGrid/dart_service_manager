@@ -18,6 +18,23 @@ void main() {
       );
     });
 
+    test(
+      'selects the Windows backend (SCM default, Task Scheduler opt-in)',
+      () {
+        expect(
+          ServiceDriverFactory.forOperatingSystem('windows'),
+          isA<WindowsServiceDriver>(),
+        );
+        expect(
+          ServiceDriverFactory.forOperatingSystem(
+            'windows',
+            windowsBackend: WindowsServiceBackend.taskScheduler,
+          ),
+          isA<WindowsTaskSchedulerDriver>(),
+        );
+      },
+    );
+
     test('throws on unsupported platforms', () {
       expect(
         () => ServiceDriverFactory.forOperatingSystem('plan9'),

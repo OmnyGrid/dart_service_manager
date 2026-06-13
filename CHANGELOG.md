@@ -1,3 +1,18 @@
+## 1.3.0
+
+- Add a **Windows Task Scheduler** backend (`WindowsTaskSchedulerDriver`,
+  selected via `WindowsServiceBackend.taskScheduler`). Unlike the SCM driver, it
+  runs plain console executables as background daemons without the in-process
+  service-control dispatcher the SCM requires (which kills such programs with
+  error 1053), and stages a private copy of the runtime so a Windows-locked
+  pub-cache snapshot can still be refreshed. `ServiceDriverFactory` and
+  `DartServiceManager.forCurrentPlatform` take a `windowsBackend` parameter
+  (default `serviceControlManager`, unchanged).
+- Add `DartServiceManager.describe()` returning a `ServiceInfo` (recorded
+  parameters + live status + the rendered native definition), and
+  `DartServiceManager.reinstall()` (clean teardown-then-recreate that tolerates a
+  missing prior install).
+
 ## 1.2.2
 
 - Fix a destructive bug where `uninstall` could delete an externally-provided
