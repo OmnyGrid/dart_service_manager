@@ -337,6 +337,47 @@ dart_services:
   });
 
   test(
+    'describe returns recorded params, live status and definition',
+    () async {
+      await manager.installDescriptor(descriptor());
+      driver.defaultStatus = ServiceStatus.running;
+      final info = await manager.describe('svc', 'api');
+      expect(info.entry.arguments, ['--port', '8080']);
+      expect(info.entry.environment, {'LOG': 'debug'});
+      expect(info.status, ServiceStatus.running);
+      expect(info.definition, 'rendered:dart_svc_api');
+    },
+  );
+
+  test('describe throws when the service is not installed', () {
+    expect(
+      () => manager.describe('svc', 'api'),
+      throwsA(isA<ServiceNotFoundException>()),
+    );
+  });
+
+  test('reinstall tears down then reinstalls (force) and restarts', () async {
+    await manager.installDescriptor(descriptor());
+    driver.operations.clear();
+    await manager.reinstall(descriptor(), startNow: true);
+    expect(
+      driver.operations,
+      containsAllInOrder([
+        'uninstall:svc:api',
+        'install:svc:api',
+        'start:svc:api',
+      ]),
+    );
+    expect(await registry.byPackage('svc'), hasLength(1));
+  });
+
+  test('reinstall tolerates a service that is not yet installed', () async {
+    await manager.reinstall(descriptor(), startNow: false);
+    expect(driver.operations, contains('install:svc:api'));
+    expect(await registry.find('svc', 'api'), isNotNull);
+  });
+
+  test(
     'declarative install with a manifest executable skips compilation',
     () async {
       final prebuilt = File(p.join(packageRoot.path, 'bin', 'prebuilt'))

@@ -15,6 +15,7 @@ export 'src/manager/dart_service_manager.dart';
 export 'src/models/dart_package_service.dart';
 export 'src/models/restart_policy.dart';
 export 'src/models/service_descriptor.dart';
+export 'src/models/service_info.dart';
 export 'src/models/service_install_config.dart';
 export 'src/models/service_scope.dart';
 export 'src/models/service_status.dart';
@@ -38,7 +39,10 @@ export 'src/drivers/linux_systemd_driver.dart';
 export 'src/drivers/macos_launchd_driver.dart';
 export 'src/drivers/platform_service_driver.dart';
 export 'src/drivers/service_driver_factory.dart';
+export 'src/drivers/windows_service_backend.dart';
 export 'src/drivers/windows_service_driver.dart';
+export 'src/drivers/windows_task_scheduler_driver.dart'
+    show WindowsTaskSchedulerDriver;
 
 // Process abstraction.
 export 'src/process/privilege_checker.dart';
