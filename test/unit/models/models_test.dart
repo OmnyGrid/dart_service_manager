@@ -82,6 +82,30 @@ void main() {
       );
       expect(r.arguments, ['x']);
     });
+
+    test('JIT does not double a script already leading the arguments', () {
+      const script = '/proj/bin/main.dart';
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable: '/opt/dart-sdk/bin/dart',
+        script: script,
+        arguments: [script, 'hub', 'start'],
+      );
+      expect(r.executable, '/opt/dart-sdk/bin/dart');
+      expect(r.arguments, [script, 'hub', 'start']);
+      expect(r.arguments.where((a) => a == script), hasLength(1));
+    });
+
+    test('JIT idempotency holds on Windows dart.exe too', () {
+      const script = r'C:\pkg\bin\main.dart-3.12.1.snapshot';
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable: r'C:\dart\bin\dart.exe',
+        script: script,
+        arguments: [script, 'hub', 'start'],
+      );
+      expect(r.executable, r'C:\dart\bin\dart.exe');
+      expect(r.arguments, [script, 'hub', 'start']);
+      expect(r.arguments.where((a) => a == script), hasLength(1));
+    });
   });
 
   group('ServiceScope', () {

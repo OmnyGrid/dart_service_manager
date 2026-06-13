@@ -93,6 +93,10 @@ class ServiceDescriptor {
   /// [arguments] — the resulting service runs `dart <script> <args…>`. For an
   /// AOT binary (`dart compile exe`, `dart pub global activate`) the executable
   /// is the binary itself and [arguments] are used as-is.
+  ///
+  /// Prepending is idempotent: if [arguments] already begins with the script
+  /// (e.g. previously-resolved arguments fed back in on a reinstall), the script
+  /// is not prepended again, so re-derivation never doubles it.
   factory ServiceDescriptor.forCurrentExecutable({
     required String packageName,
     required String serviceName,
@@ -139,6 +143,10 @@ class ServiceDescriptor {
   /// `dart <script> …`; otherwise [resolvedExecutable] is an AOT binary and
   /// [arguments] are returned unchanged. Exposed for deterministic testing of
   /// the JIT-vs-AOT branch.
+  ///
+  /// The prepend is idempotent: when [arguments] already starts with [script],
+  /// it is returned unchanged so re-deriving a descriptor (e.g. on reinstall,
+  /// from already-resolved arguments) does not duplicate the script.
   @visibleForTesting
   static ({String executable, List<String> arguments}) resolveSelfExecutable({
     required String resolvedExecutable,
@@ -148,9 +156,12 @@ class ServiceDescriptor {
     final base = p.basenameWithoutExtension(resolvedExecutable).toLowerCase();
     final isDartVm = base == 'dart';
     if (isDartVm && script != null) {
+      final alreadyPrefixed = arguments.isNotEmpty && arguments.first == script;
       return (
         executable: resolvedExecutable,
-        arguments: [script, ...arguments],
+        arguments: alreadyPrefixed
+            ? List.of(arguments)
+            : [script, ...arguments],
       );
     }
     return (executable: resolvedExecutable, arguments: List.of(arguments));

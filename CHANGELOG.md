@@ -1,3 +1,16 @@
+## 1.3.1
+
+- Fix a `forCurrentExecutable` reinstall crash-loop under the Dart VM (JIT /
+  pub-cache snapshot). `resolveSelfExecutable` prepended `Platform.script` to the
+  arguments unconditionally, so re-deriving a descriptor from already-resolved
+  arguments (as a reinstall does, replaying the registry's stored arguments)
+  doubled the script: `dart <snapshot> <snapshot> <command> …`. The service then
+  saw the extra snapshot path as an argument before its command and exited,
+  triggering an endless `Restart=always` loop. The prepend is now idempotent —
+  if the arguments already start with the script it is not added again. Affects
+  every platform (systemd, launchd, Windows SCM and Task Scheduler), since the
+  fix is in the shared descriptor model.
+
 ## 1.3.0
 
 - Add a **Windows Task Scheduler** backend (`WindowsTaskSchedulerDriver`,
