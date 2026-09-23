@@ -318,9 +318,18 @@ dart test -t version           # version/pubspec sync check
 dart test --coverage=coverage  # collect coverage
 ```
 
-Tests tagged `os-linux` / `os-macos` / `os-windows` drive a real init system and
-are skipped by default; run them explicitly on a matching host (e.g.
-`dart test -t os-macos`).
+Tests tagged `os-linux` / `os-macos` / `os-windows` drive the host's real init
+system and are skipped by default. The `host` preset runs them:
+
+```bash
+dart test -P host test/integration/host_service_test.dart
+```
+
+They install user-scoped services (`systemd --user` on Linux, launchd agents on
+macOS) under a per-run package name and remove them afterwards. The registry
+they use lives in a temp directory. On Linux, `systemctl --user` must work, so
+run them from a login session or after `loginctl enable-linger`. CI runs them
+on Ubuntu and macOS in the `host` job.
 
 ## Contributing
 

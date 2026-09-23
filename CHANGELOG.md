@@ -26,6 +26,26 @@
 - README: the `reconfigure` example rebuilt a descriptor with
   `copyWith(arguments: …)`, which drops the script under the Dart VM. It now
   uses `forCurrentExecutable`, and a reinstall example was added.
+- Fix launchd reporting a stopped service as `failed`. `launchctl stop` ends
+  the service with SIGTERM, so launchd reports `LastExitStatus = 15`, and
+  every nonzero value was read as a failure. The value is a raw `waitpid`
+  status, so a SIGTERM stop now reads as `stopped`. Real failures (a nonzero
+  exit code, which is shifted left by 8 bits, or a crash signal) still read
+  as `failed`.
+- New tests run against the host's real init system,
+  `test/integration/host_service_test.dart`. They install, stop, start,
+  reinstall and uninstall user-scoped services under `systemd --user` and
+  launchd, including reinstalls across a Dart VM script change and a switch
+  to a native binary. The `os-*` tags are still skipped by default; the new
+  `host` preset runs them (`dart test -P host`), and the new CI `host` job
+  runs them on Ubuntu and macOS. Before this, `-t os-macos` alone never lifted
+  the skip, so these tests never ran.
+- More unit and integration coverage: lifecycle operations for 1.3.x registry
+  entries, upgrading a 1.3.x registry file on disk, reinstalling a service the
+  OS no longer knows, `forCurrentExecutable` itself, `isRuntimeScript`, and a
+  real-process test for `SystemProcessRunner`.
+- Adopt super parameters in the exception classes; the current SDK's
+  `use_super_parameters` lint was failing `dart analyze --fatal-infos` in CI.
 
 ## 1.3.1
 

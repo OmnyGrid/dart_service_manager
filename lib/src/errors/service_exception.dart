@@ -38,72 +38,72 @@ sealed class ServiceManagerException implements Exception {
 /// Thrown when a service cannot be installed into the operating system.
 final class ServiceInstallationException extends ServiceManagerException {
   /// Creates an installation failure with an optional root [cause].
-  const ServiceInstallationException(String message, {Object? cause})
-    : super(ErrorCodes.installationFailed, message, cause: cause);
+  const ServiceInstallationException(String message, {super.cause})
+    : super(ErrorCodes.installationFailed, message);
 }
 
 /// Thrown when compiling a service entrypoint to a native executable fails.
 final class ServiceCompilationException extends ServiceManagerException {
   /// Creates a compilation failure with an optional root [cause].
-  const ServiceCompilationException(String message, {Object? cause})
-    : super(ErrorCodes.compilationFailed, message, cause: cause);
+  const ServiceCompilationException(String message, {super.cause})
+    : super(ErrorCodes.compilationFailed, message);
 }
 
 /// Thrown when a service fails to start.
 final class ServiceStartException extends ServiceManagerException {
   /// Creates a start failure with an optional root [cause].
-  const ServiceStartException(String message, {Object? cause})
-    : super(ErrorCodes.startFailed, message, cause: cause);
+  const ServiceStartException(String message, {super.cause})
+    : super(ErrorCodes.startFailed, message);
 }
 
 /// Thrown when a service fails to stop.
 final class ServiceStopException extends ServiceManagerException {
   /// Creates a stop failure with an optional root [cause].
-  const ServiceStopException(String message, {Object? cause})
-    : super(ErrorCodes.stopFailed, message, cause: cause);
+  const ServiceStopException(String message, {super.cause})
+    : super(ErrorCodes.stopFailed, message);
 }
 
 /// Thrown when the on-disk service registry cannot be read, written or parsed.
 final class ServiceRegistryException extends ServiceManagerException {
   /// Creates a registry failure with an optional root [cause].
-  const ServiceRegistryException(String message, {Object? cause})
-    : super(ErrorCodes.registryError, message, cause: cause);
+  const ServiceRegistryException(String message, {super.cause})
+    : super(ErrorCodes.registryError, message);
 }
 
 /// Thrown when an operation is not supported on the current platform — for
 /// example pausing a service under launchd or systemd.
 final class PlatformNotSupportedException extends ServiceManagerException {
   /// Creates a platform-not-supported failure with an optional root [cause].
-  const PlatformNotSupportedException(String message, {Object? cause})
-    : super(ErrorCodes.platformNotSupported, message, cause: cause);
+  const PlatformNotSupportedException(String message, {super.cause})
+    : super(ErrorCodes.platformNotSupported, message);
 }
 
 /// Thrown when a package or service manifest is missing or malformed.
 final class ServiceManifestException extends ServiceManagerException {
   /// Creates a manifest failure with an optional root [cause].
-  const ServiceManifestException(String message, {Object? cause})
-    : super(ErrorCodes.manifestError, message, cause: cause);
+  const ServiceManifestException(String message, {super.cause})
+    : super(ErrorCodes.manifestError, message);
 }
 
 /// Thrown when a referenced package, service or registry entry does not exist.
 final class ServiceNotFoundException extends ServiceManagerException {
   /// Creates a not-found failure with an optional root [cause].
-  const ServiceNotFoundException(String message, {Object? cause})
-    : super(ErrorCodes.notFound, message, cause: cause);
+  const ServiceNotFoundException(String message, {super.cause})
+    : super(ErrorCodes.notFound, message);
 }
 
 /// Thrown when an operation requires elevated privileges the caller lacks —
 /// e.g. installing a system-scoped service without root/administrator rights.
 final class PermissionDeniedException extends ServiceManagerException {
   /// Creates a permission-denied failure with an optional root [cause].
-  const PermissionDeniedException(String message, {Object? cause})
-    : super(ErrorCodes.permissionDenied, message, cause: cause);
+  const PermissionDeniedException(String message, {super.cause})
+    : super(ErrorCodes.permissionDenied, message);
 }
 
 /// Thrown when installing a service that is already recorded in the registry,
 /// unless the caller opts into replacing it.
 final class ServiceAlreadyInstalledException extends ServiceManagerException {
   /// Creates an already-installed failure with an optional root [cause].
-  const ServiceAlreadyInstalledException(String message, {Object? cause})
-    : super(ErrorCodes.alreadyInstalled, message, cause: cause);
+  const ServiceAlreadyInstalledException(String message, {super.cause})
+    : super(ErrorCodes.alreadyInstalled, message);
 }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dart_service_manager/dart_service_manager.dart';
 import 'package:test/test.dart';
 
@@ -164,6 +166,71 @@ void main() {
         arguments: ['run', 'bin/main.dart', '/data/config.yaml'],
       );
       expect(r.arguments, ['run', 'bin/main.dart', '/data/config.yaml']);
+    });
+  });
+
+  group('ServiceDescriptor.forCurrentExecutable', () {
+    ServiceDescriptor self(List<String> arguments) =>
+        ServiceDescriptor.forCurrentExecutable(
+          packageName: 'p',
+          serviceName: 's',
+          arguments: arguments,
+          environment: const {'K': 'v'},
+          scope: ServiceScope.system,
+          restart: RestartPolicy.onFailure,
+        );
+
+    test('targets this process and keeps the command intact', () {
+      final d = self(['hub', 'start']);
+      expect(d.executablePath, Platform.resolvedExecutable);
+      expect(d.commandArguments, ['hub', 'start']);
+      // Under `dart test` this is the VM: the script leads the arguments.
+      if (d.scriptPath != null) {
+        expect(d.arguments, [d.scriptPath, 'hub', 'start']);
+      } else {
+        expect(d.arguments, ['hub', 'start']);
+      }
+      expect(d.environment, {'K': 'v'});
+      expect(d.scope, ServiceScope.system);
+      expect(d.restart, RestartPolicy.onFailure);
+    });
+
+    test('re-deriving from its own arguments is stable', () {
+      final first = self(['hub', 'start']);
+      expect(self(first.arguments).arguments, first.arguments);
+      expect(self(first.commandArguments).arguments, first.arguments);
+    });
+
+    test('drops a stale snapshot from the arguments', () {
+      final d = self(['/cache/other.dart-3.11.0.snapshot', 'hub', 'start']);
+      expect(d.commandArguments, ['hub', 'start']);
+    });
+  });
+
+  group('ServiceDescriptor.isRuntimeScript', () {
+    test('matches absolute Dart script paths', () {
+      for (final path in [
+        '/cache/app.dart-3.12.1.snapshot',
+        '/proj/bin/main.dart',
+        '/build/app.dill',
+        r'C:\cache\app.dart-3.12.1.snapshot',
+        '/Cache/APP.SNAPSHOT',
+      ]) {
+        expect(ServiceDescriptor.isRuntimeScript(path), isTrue, reason: path);
+      }
+    });
+
+    test('ignores relative paths and other files', () {
+      for (final arg in [
+        'bin/main.dart',
+        'main.dart',
+        'hub',
+        '--config=/etc/app.dart',
+        '/etc/app/config.yaml',
+        '/usr/local/bin/app',
+      ]) {
+        expect(ServiceDescriptor.isRuntimeScript(arg), isFalse, reason: arg);
+      }
     });
   });
 
