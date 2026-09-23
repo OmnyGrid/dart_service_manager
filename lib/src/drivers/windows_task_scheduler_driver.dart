@@ -202,7 +202,10 @@ final class WindowsTaskSchedulerDriver implements PlatformServiceDriver {
     if (_samePath(_parentDir(_runtimeSource(d)), runtimeDir(d))) return d;
     final target = stagedRuntimePath(d);
     return _isDartVm(d)
-        ? d.copyWith(arguments: [target, ...d.arguments.skip(1)])
+        ? d.copyWith(
+            arguments: [target, ...d.arguments.skip(1)],
+            scriptPath: d.scriptPath == null ? null : target,
+          )
         : d.copyWith(executablePath: target);
   }
 

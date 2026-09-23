@@ -240,8 +240,33 @@ final descriptor = ServiceDescriptor.forCurrentExecutable(
 print(manager.renderDefinition(descriptor));
 
 await manager.installDescriptor(descriptor, startNow: true);
-// later, change flags and re-apply (preserves running state):
-await manager.reconfigure(descriptor.copyWith(arguments: ['hub', 'start', '-v']));
+// later, change flags and re-apply (preserves running state). Build it with
+// forCurrentExecutable again: under the Dart VM `descriptor.arguments` starts
+// with the script, so copyWith(arguments: …) would drop it.
+await manager.reconfigure(ServiceDescriptor.forCurrentExecutable(
+  packageName: 'myapp',
+  serviceName: 'hub',
+  arguments: ['hub', 'start', '-v'],
+  scope: ServiceScope.system,
+));
+```
+
+On a reinstall, rebuild the descriptor from the recorded **command**, not the
+full argument vector. `RegistryEntry.arguments` (and
+`ServiceDescriptor.commandArguments`) exclude the Dart script the VM ran, which
+is recorded separately as `scriptPath`. That way a reinstall from a different
+runtime (an AOT build, or a newer SDK with a renamed pub-cache snapshot) never
+carries the old script over:
+
+```dart
+final info = await manager.describe('myapp', 'hub');
+await manager.reinstall(ServiceDescriptor.forCurrentExecutable(
+  packageName: 'myapp',
+  serviceName: 'hub',
+  arguments: info.entry.arguments, // the command alone
+  environment: info.entry.environment,
+  scope: info.entry.scope,
+));
 ```
 
 ### Core API

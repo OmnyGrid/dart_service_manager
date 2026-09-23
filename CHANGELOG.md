@@ -1,3 +1,32 @@
+## 1.4.0
+
+- Fix `forCurrentExecutable` reinstalls carrying a stale runtime script. The
+  registry recorded the full argument vector, `dart <script> <command…>`, so a
+  consumer that reinstalled from `RegistryEntry.arguments` fed the old script
+  back in. The 1.3.1 guard only caught an exact match, so it missed two cases.
+  A service installed under the Dart VM and reinstalled from an AOT build (for
+  example a Dart 3.12 `dart install` app bundle) ran
+  `<binary> <old snapshot> <command…>`. After an SDK upgrade renamed the
+  pub-cache snapshot, it ran `dart <new snapshot> <old snapshot> <command…>`.
+- New `ServiceDescriptor.scriptPath` and `RegistryEntry.scriptPath` record the
+  Dart script separately, and `forCurrentExecutable` sets it.
+  `ServiceDescriptor.commandArguments` gives the command without the script.
+- **Behaviour change:** `RegistryEntry.arguments` is now the command alone.
+  The new `RegistryEntry.commandLine` is the full vector passed to the binary.
+  Reinstalling from `entry.arguments` now does the right thing with no change
+  in the consumer. Registries written by earlier releases are migrated on
+  read: a Dart VM entry's first argument becomes `scriptPath`.
+- `resolveSelfExecutable` also drops leading runtime scripts already in the
+  arguments before adding the current one. It drops the current script, and
+  any absolute `.snapshot`, `.dill` or `.dart` path. This repairs services
+  already installed with a stale or doubled script. The function now also
+  returns the `script` it applied, and recognises `dart.exe` paths on any host.
+- The Task Scheduler driver keeps `scriptPath` pointing at the staged runtime
+  copy.
+- README: the `reconfigure` example rebuilt a descriptor with
+  `copyWith(arguments: …)`, which drops the script under the Dart VM. It now
+  uses `forCurrentExecutable`, and a reinstall example was added.
+
 ## 1.3.1
 
 - Fix a `forCurrentExecutable` reinstall crash-loop under the Dart VM (JIT /

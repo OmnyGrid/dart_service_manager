@@ -106,6 +106,91 @@ void main() {
       expect(r.arguments, [script, 'hub', 'start']);
       expect(r.arguments.where((a) => a == script), hasLength(1));
     });
+
+    test('reports the script for a JIT launch and none for AOT', () {
+      const script = '/proj/bin/main.dart';
+      expect(
+        ServiceDescriptor.resolveSelfExecutable(
+          resolvedExecutable: '/opt/dart-sdk/bin/dart',
+          script: script,
+          arguments: ['hub', 'start'],
+        ).script,
+        script,
+      );
+      expect(
+        ServiceDescriptor.resolveSelfExecutable(
+          resolvedExecutable: '/usr/local/bin/myapp',
+          script: script,
+          arguments: ['hub', 'start'],
+        ).script,
+        isNull,
+      );
+    });
+
+    test('AOT drops a stale snapshot left by a JIT install', () {
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable:
+            '/home/u/.local/state/Dart/install/app-bundles/app/bundle/bin/app',
+        script:
+            '/home/u/.local/state/Dart/install/app-bundles/app/bundle/bin/app',
+        arguments: [
+          '/home/u/.pub-cache/global_packages/app/bin/app.dart-3.12.1.snapshot',
+          'hub',
+          'start',
+        ],
+      );
+      expect(r.arguments, ['hub', 'start']);
+      expect(r.script, isNull);
+    });
+
+    test('JIT replaces a stale snapshot after an SDK upgrade', () {
+      const current = '/cache/app/bin/app.dart-3.12.1.snapshot';
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable: '/opt/dart-sdk/bin/dart',
+        script: current,
+        arguments: [
+          current,
+          '/cache/app/bin/app.dart-3.11.0.snapshot',
+          'hub',
+          'start',
+        ],
+      );
+      expect(r.arguments, [current, 'hub', 'start']);
+    });
+
+    test('keeps a relative or non-script first argument', () {
+      final r = ServiceDescriptor.resolveSelfExecutable(
+        resolvedExecutable: '/usr/local/bin/myapp',
+        arguments: ['run', 'bin/main.dart', '/data/config.yaml'],
+      );
+      expect(r.arguments, ['run', 'bin/main.dart', '/data/config.yaml']);
+    });
+  });
+
+  group('ServiceDescriptor.scriptPath', () {
+    test('commandArguments drops the leading script', () {
+      final d = ServiceDescriptor(
+        packageName: 'p',
+        serviceName: 's',
+        executablePath: '/opt/dart-sdk/bin/dart',
+        arguments: ['/p/main.dart', 'hub', 'start'],
+        scriptPath: '/p/main.dart',
+      );
+      expect(d.scriptPath, '/p/main.dart');
+      expect(d.commandArguments, ['hub', 'start']);
+    });
+
+    test('is dropped when it does not lead the arguments', () {
+      final d = ServiceDescriptor(
+        packageName: 'p',
+        serviceName: 's',
+        executablePath: '/bin/s',
+        arguments: ['hub', 'start'],
+        scriptPath: '/p/main.dart',
+      );
+      expect(d.scriptPath, isNull);
+      expect(d.commandArguments, ['hub', 'start']);
+    });
   });
 
   group('ServiceScope', () {

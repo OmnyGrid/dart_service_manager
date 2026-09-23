@@ -36,7 +36,19 @@ class ServiceDescriptor {
   final String description;
 
   /// Arguments passed to [executablePath] when the service runs.
+  ///
+  /// This is the full argument vector: when [scriptPath] is set it is the first
+  /// element. See [commandArguments] for the caller's command alone.
   final List<String> arguments;
+
+  /// The Dart script the VM runs, when [executablePath] is the Dart VM and the
+  /// script leads [arguments] (a [forCurrentExecutable] install running under
+  /// JIT: `dart <script> <command…>`). `null` for an executable that runs the
+  /// command directly.
+  ///
+  /// Recorded separately so a reinstall can rebuild the command without
+  /// carrying over the runtime prefix of the process that installed it.
+  final String? scriptPath;
 
   /// Environment variables set for the running service process.
   ///
@@ -74,6 +86,7 @@ class ServiceDescriptor {
     this.scope = ServiceScope.user,
     String? description,
     this.arguments = const [],
+    String? scriptPath,
     this.environment = const {},
     this.workingDirectory,
     this.restart = RestartPolicy.always,
@@ -81,7 +94,18 @@ class ServiceDescriptor {
     this.autoStart = true,
     this.stopTimeout,
     this.environmentFile,
-  }) : description = description ?? 'Dart service $serviceName ($packageName)';
+  }) : description = description ?? 'Dart service $serviceName ($packageName)',
+       // Kept only when it actually leads [arguments], so a non-null
+       // [scriptPath] always means `arguments.first == scriptPath`.
+       scriptPath = arguments.isNotEmpty && arguments.first == scriptPath
+           ? scriptPath
+           : null;
+
+  /// [arguments] without the leading [scriptPath]: the command the service
+  /// runs, independent of the runtime that launches it. Pass this — not
+  /// [arguments] — back to [forCurrentExecutable] to re-derive the descriptor.
+  List<String> get commandArguments =>
+      scriptPath == null ? arguments : arguments.sublist(1);
 
   /// Creates a descriptor that installs the **currently running executable** as
   /// a service — the "install myself" case used by CLIs that ship as an AOT
@@ -94,9 +118,10 @@ class ServiceDescriptor {
   /// AOT binary (`dart compile exe`, `dart pub global activate`) the executable
   /// is the binary itself and [arguments] are used as-is.
   ///
-  /// Prepending is idempotent: if [arguments] already begins with the script
-  /// (e.g. previously-resolved arguments fed back in on a reinstall), the script
-  /// is not prepended again, so re-derivation never doubles it.
+  /// [arguments] should be the command alone — for a reinstall, the recorded
+  /// [RegistryEntry.arguments] or [commandArguments]. A runtime prefix left in
+  /// it by an earlier install (see [resolveSelfExecutable]) is dropped, so
+  /// re-derivation never doubles the script or keeps a stale one.
   factory ServiceDescriptor.forCurrentExecutable({
     required String packageName,
     required String serviceName,
@@ -124,6 +149,7 @@ class ServiceDescriptor {
       serviceName: serviceName,
       executablePath: resolved.executable,
       arguments: resolved.arguments,
+      scriptPath: resolved.script,
       environment: environment,
       scope: scope,
       description: description,
@@ -136,35 +162,59 @@ class ServiceDescriptor {
     );
   }
 
-  /// Computes the `(executable, arguments)` pair for "install myself".
+  /// Computes the `(executable, arguments, script)` triple for "install
+  /// myself".
   ///
   /// If [resolvedExecutable] is the Dart VM (`dart`/`dart.exe`) and a [script]
   /// is known, the script is prepended to [arguments] so the service launches
-  /// `dart <script> …`; otherwise [resolvedExecutable] is an AOT binary and
-  /// [arguments] are returned unchanged. Exposed for deterministic testing of
-  /// the JIT-vs-AOT branch.
+  /// `dart <script> …`, and returned as `script`; otherwise
+  /// [resolvedExecutable] is an AOT binary, [arguments] are the command as-is
+  /// and `script` is `null`. Exposed for deterministic testing of the
+  /// JIT-vs-AOT branch.
   ///
-  /// The prepend is idempotent: when [arguments] already starts with [script],
-  /// it is returned unchanged so re-deriving a descriptor (e.g. on reinstall,
-  /// from already-resolved arguments) does not duplicate the script.
+  /// Leading runtime scripts already in [arguments] are dropped first — the
+  /// current [script], or any absolute path ending in `.snapshot`, `.dill` or
+  /// `.dart` (see [isRuntimeScript]). Arguments recorded by releases before
+  /// [scriptPath] existed carry the installing process's script, and it goes
+  /// stale when the runtime changes: a later AOT build would run
+  /// `<binary> <old snapshot> …`, and an SDK upgrade (which renames the
+  /// pub-cache snapshot) would run `dart <new> <old> …`.
   @visibleForTesting
-  static ({String executable, List<String> arguments}) resolveSelfExecutable({
+  static ({String executable, List<String> arguments, String? script})
+  resolveSelfExecutable({
     required String resolvedExecutable,
     String? script,
     List<String> arguments = const [],
   }) {
-    final base = p.basenameWithoutExtension(resolvedExecutable).toLowerCase();
-    final isDartVm = base == 'dart';
-    if (isDartVm && script != null) {
-      final alreadyPrefixed = arguments.isNotEmpty && arguments.first == script;
+    var start = 0;
+    while (start < arguments.length &&
+        (arguments[start] == script || isRuntimeScript(arguments[start]))) {
+      start++;
+    }
+    final command = arguments.sublist(start);
+    // Windows-style parsing accepts both `/` and `\` separators.
+    final base = p.windows
+        .basenameWithoutExtension(resolvedExecutable)
+        .toLowerCase();
+    if (base == 'dart' && script != null) {
       return (
         executable: resolvedExecutable,
-        arguments: alreadyPrefixed
-            ? List.of(arguments)
-            : [script, ...arguments],
+        arguments: [script, ...command],
+        script: script,
       );
     }
-    return (executable: resolvedExecutable, arguments: List.of(arguments));
+    return (executable: resolvedExecutable, arguments: command, script: null);
+  }
+
+  /// Whether [argument] looks like a Dart runtime script — an absolute path to
+  /// a `.snapshot`, `.dill` or `.dart` file — rather than part of a command.
+  @visibleForTesting
+  static bool isRuntimeScript(String argument) {
+    if (!p.isAbsolute(argument) && !p.windows.isAbsolute(argument)) {
+      return false;
+    }
+    final ext = p.extension(argument).toLowerCase();
+    return ext == '.snapshot' || ext == '.dill' || ext == '.dart';
   }
 
   /// The OS-neutral service identifier, e.g. `dart_analytics_server_worker`.
@@ -188,6 +238,7 @@ class ServiceDescriptor {
     ServiceScope? scope,
     String? description,
     List<String>? arguments,
+    String? scriptPath,
     Map<String, String>? environment,
     String? workingDirectory,
     RestartPolicy? restart,
@@ -202,6 +253,7 @@ class ServiceDescriptor {
     scope: scope ?? this.scope,
     description: description ?? this.description,
     arguments: arguments ?? this.arguments,
+    scriptPath: scriptPath ?? this.scriptPath,
     environment: environment ?? this.environment,
     workingDirectory: workingDirectory ?? this.workingDirectory,
     restart: restart ?? this.restart,

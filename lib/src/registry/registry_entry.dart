@@ -1,4 +1,5 @@
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/restart_policy.dart';
 import '../models/service_scope.dart';
@@ -40,8 +41,14 @@ class RegistryEntry {
   /// The last-known status recorded at install/refresh time.
   final ServiceStatus status;
 
-  /// Arguments passed to the executable when the service runs.
+  /// The command the service runs: the arguments after [scriptPath], if any.
+  /// Feed these back to [ServiceDescriptor.forCurrentExecutable] on reinstall.
+  /// [commandLine] is the full vector passed to [binaryPath].
   final List<String> arguments;
+
+  /// The Dart script [binaryPath] (the Dart VM) runs ahead of [arguments], or
+  /// `null` when the binary runs the command directly.
+  final String? scriptPath;
 
   /// Environment variables set for the running service.
   final Map<String, String> environment;
@@ -77,6 +84,7 @@ class RegistryEntry {
     required this.installedAt,
     this.status = ServiceStatus.installed,
     this.arguments = const [],
+    this.scriptPath,
     this.environment = const {},
     this.description,
     this.workingDirectory,
@@ -90,6 +98,10 @@ class RegistryEntry {
   /// The fully-qualified `package:service` reference.
   String get qualifiedName => '$packageName:$serviceName';
 
+  /// The full argument vector passed to [binaryPath]: [scriptPath] (when set)
+  /// followed by [arguments].
+  List<String> get commandLine => [?scriptPath, ...arguments];
+
   /// Returns a copy with selected fields replaced, preserving everything else.
   RegistryEntry copyWith({ServiceStatus? status, String? binaryPath}) =>
       RegistryEntry(
@@ -101,6 +113,7 @@ class RegistryEntry {
         installedAt: installedAt,
         status: status ?? this.status,
         arguments: arguments,
+        scriptPath: scriptPath,
         environment: environment,
         description: description,
         workingDirectory: workingDirectory,
@@ -122,6 +135,9 @@ class RegistryEntry {
     'installedAt': installedAt.toUtc().toIso8601String(),
     'status': status.name,
     if (arguments.isNotEmpty) 'args': arguments,
+    // Always written (null when absent): its presence marks [arguments] as the
+    // command alone, so [fromJson] does not apply the legacy split.
+    'script': scriptPath,
     if (environment.isNotEmpty) 'env': environment,
     if (description != null) 'description': description,
     if (workingDirectory != null) 'workingDirectory': workingDirectory,
@@ -134,30 +150,51 @@ class RegistryEntry {
 
   /// Decodes an entry from [json]. All policy/descriptor fields are optional,
   /// defaulting to the pre-1.1.0 behaviour for back-compatibility.
-  static RegistryEntry fromJson(Map<String, dynamic> json) => RegistryEntry(
-    packageName: Json.requireString(json, 'package'),
-    serviceName: Json.requireString(json, 'service'),
-    platform: Json.requireString(json, 'platform'),
-    scope:
-        ServiceScope.tryParse(Json.optString(json, 'scope') ?? 'user') ??
-        ServiceScope.user,
-    binaryPath: Json.requireString(json, 'binary'),
-    installedAt: Json.requireTimestamp(json, 'installedAt'),
-    status: ServiceStatus.parse(Json.requireString(json, 'status')),
-    arguments: _stringList(json['args']),
-    environment: _stringMap(json['env']),
-    description: Json.optString(json, 'description'),
-    workingDirectory: Json.optString(json, 'workingDirectory'),
-    restart:
-        RestartPolicy.tryParse(Json.optString(json, 'restart') ?? 'always') ??
-        RestartPolicy.always,
-    restartDelay: Duration(seconds: _intOr(json['restartDelay'], 5)),
-    autoStart: json['autoStart'] is bool ? json['autoStart'] as bool : true,
-    stopTimeout: json['stopTimeout'] == null
-        ? null
-        : Duration(seconds: _intOr(json['stopTimeout'], 0)),
-    environmentFile: Json.optString(json, 'environmentFile'),
-  );
+  ///
+  /// Entries written before `script` was recorded kept the script inside
+  /// `args`. For those, a Dart VM binary's first argument is split out as
+  /// [scriptPath], so [arguments] is the command alone.
+  static RegistryEntry fromJson(Map<String, dynamic> json) {
+    final binaryPath = Json.requireString(json, 'binary');
+    var arguments = _stringList(json['args']);
+    var scriptPath = Json.optString(json, 'script');
+    if (!json.containsKey('script') &&
+        _isDartVm(binaryPath) &&
+        arguments.isNotEmpty) {
+      scriptPath = arguments.first;
+      arguments = arguments.sublist(1);
+    }
+    return RegistryEntry(
+      packageName: Json.requireString(json, 'package'),
+      serviceName: Json.requireString(json, 'service'),
+      platform: Json.requireString(json, 'platform'),
+      scope:
+          ServiceScope.tryParse(Json.optString(json, 'scope') ?? 'user') ??
+          ServiceScope.user,
+      binaryPath: binaryPath,
+      installedAt: Json.requireTimestamp(json, 'installedAt'),
+      status: ServiceStatus.parse(Json.requireString(json, 'status')),
+      arguments: arguments,
+      scriptPath: scriptPath,
+      environment: _stringMap(json['env']),
+      description: Json.optString(json, 'description'),
+      workingDirectory: Json.optString(json, 'workingDirectory'),
+      restart:
+          RestartPolicy.tryParse(Json.optString(json, 'restart') ?? 'always') ??
+          RestartPolicy.always,
+      restartDelay: Duration(seconds: _intOr(json['restartDelay'], 5)),
+      autoStart: json['autoStart'] is bool ? json['autoStart'] as bool : true,
+      stopTimeout: json['stopTimeout'] == null
+          ? null
+          : Duration(seconds: _intOr(json['stopTimeout'], 0)),
+      environmentFile: Json.optString(json, 'environmentFile'),
+    );
+  }
+
+  /// Whether [binaryPath] is the Dart VM, whose first argument is the script.
+  /// Parsed Windows-style, which accepts both `/` and `\` separators.
+  static bool _isDartVm(String binaryPath) =>
+      p.windows.basenameWithoutExtension(binaryPath).toLowerCase() == 'dart';
 
   static List<String> _stringList(Object? value) => value is List
       ? value.map((e) => e.toString()).toList(growable: false)

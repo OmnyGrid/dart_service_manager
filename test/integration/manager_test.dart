@@ -304,6 +304,46 @@ dart_services:
     },
   );
 
+  test('a JIT install records the command apart from the script', () async {
+    const snapshot = '/cache/api.dart-3.11.0.snapshot';
+    await manager.installDescriptor(
+      ServiceDescriptor(
+        packageName: 'svc',
+        serviceName: 'api',
+        executablePath: '/opt/dart-sdk/bin/dart',
+        arguments: [snapshot, 'hub', 'start'],
+        scriptPath: snapshot,
+      ),
+    );
+    // The driver still runs the full `dart <snapshot> hub start`.
+    expect(driver.installed.single.arguments, [snapshot, 'hub', 'start']);
+    final info = await manager.describe('svc', 'api');
+    expect(info.entry.scriptPath, snapshot);
+    expect(info.entry.arguments, ['hub', 'start']);
+
+    // Reinstalling from the recorded command under an AOT build of the same
+    // tool must not carry the old snapshot over.
+    final resolved = ServiceDescriptor.resolveSelfExecutable(
+      resolvedExecutable: '/opt/bin/api',
+      script: '/opt/bin/api',
+      arguments: info.entry.arguments,
+    );
+    await manager.reinstall(
+      ServiceDescriptor(
+        packageName: 'svc',
+        serviceName: 'api',
+        executablePath: resolved.executable,
+        arguments: resolved.arguments,
+        scriptPath: resolved.script,
+      ),
+    );
+    expect(driver.installed.last.executablePath, '/opt/bin/api');
+    expect(driver.installed.last.arguments, ['hub', 'start']);
+    final entry = (await registry.find('svc', 'api'))!;
+    expect(entry.scriptPath, isNull);
+    expect(entry.arguments, ['hub', 'start']);
+  });
+
   test('installDescriptor rejects an already-installed service', () async {
     await manager.installDescriptor(descriptor());
     expect(

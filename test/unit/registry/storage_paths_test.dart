@@ -152,5 +152,76 @@ void main() {
       expect(e.restartDelay, const Duration(seconds: 5));
       expect(e.autoStart, isTrue);
     });
+
+    test('round-trips the script separately from the command', () {
+      final entry = RegistryEntry(
+        packageName: 'a',
+        serviceName: 's',
+        platform: 'linux',
+        scope: ServiceScope.user,
+        binaryPath: '/opt/dart-sdk/bin/dart',
+        installedAt: DateTime.utc(2026),
+        arguments: ['hub', 'start'],
+        scriptPath: '/cache/app.dart-3.12.1.snapshot',
+      );
+      final decoded = RegistryEntry.fromJson(entry.toJson());
+      expect(decoded.scriptPath, '/cache/app.dart-3.12.1.snapshot');
+      expect(decoded.arguments, ['hub', 'start']);
+      expect(decoded.commandLine, [
+        '/cache/app.dart-3.12.1.snapshot',
+        'hub',
+        'start',
+      ]);
+    });
+
+    test('a new Dart VM entry without a script is not split on read', () {
+      final entry = RegistryEntry(
+        packageName: 'a',
+        serviceName: 's',
+        platform: 'linux',
+        scope: ServiceScope.user,
+        binaryPath: '/opt/dart-sdk/bin/dart',
+        installedAt: DateTime.utc(2026),
+        arguments: ['/srv/main.dart', '--port', '1'],
+      );
+      final decoded = RegistryEntry.fromJson(entry.toJson());
+      expect(decoded.scriptPath, isNull);
+      expect(decoded.arguments, ['/srv/main.dart', '--port', '1']);
+    });
+
+    test('a legacy Dart VM entry splits the script out of args', () {
+      final json = {
+        'package': 'a',
+        'service': 's',
+        'platform': 'windows',
+        'binary': r'C:\dart\bin\dart.exe',
+        'installedAt': DateTime.utc(2026).toIso8601String(),
+        'status': 'running',
+        'args': [r'C:\cache\app.dart-3.11.0.snapshot', 'hub', 'start'],
+      };
+      final e = RegistryEntry.fromJson(json);
+      expect(e.scriptPath, r'C:\cache\app.dart-3.11.0.snapshot');
+      expect(e.arguments, ['hub', 'start']);
+      expect(e.commandLine, [
+        r'C:\cache\app.dart-3.11.0.snapshot',
+        'hub',
+        'start',
+      ]);
+    });
+
+    test('a legacy AOT entry keeps its args as recorded', () {
+      final json = {
+        'package': 'a',
+        'service': 's',
+        'platform': 'linux',
+        'binary': '/usr/local/bin/app',
+        'installedAt': DateTime.utc(2026).toIso8601String(),
+        'status': 'running',
+        'args': ['hub', 'start'],
+      };
+      final e = RegistryEntry.fromJson(json);
+      expect(e.scriptPath, isNull);
+      expect(e.arguments, ['hub', 'start']);
+    });
   });
 }
