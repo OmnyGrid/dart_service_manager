@@ -106,6 +106,35 @@ void main() {
     expect(await failed.status(descriptor()), ServiceStatus.failed);
   });
 
+  /// The status launchd reports for a loaded, not-running job whose last
+  /// `waitpid` status was [lastExitStatus].
+  Future<ServiceStatus> statusAfterExit(int lastExitStatus) =>
+      MacOsLaunchdDriver(
+        processRunner: FakeProcessRunner(
+          defaultResult: ProcessRunResult(
+            exitCode: 0,
+            stdout: '{\n  "LastExitStatus" = $lastExitStatus;\n}',
+          ),
+        ),
+        environment: {'HOME': home.path},
+      ).status(descriptor());
+
+  test('status reads a SIGTERM stop (launchctl stop) as stopped', () async {
+    expect(await statusAfterExit(15), ServiceStatus.stopped);
+  });
+
+  test('status reads a clean exit as stopped', () async {
+    expect(await statusAfterExit(0), ServiceStatus.stopped);
+  });
+
+  test('status reads exit code 15 (not the signal) as failed', () async {
+    expect(await statusAfterExit(15 << 8), ServiceStatus.failed);
+  });
+
+  test('status reads a crash signal (SIGSEGV) as failed', () async {
+    expect(await statusAfterExit(11), ServiceStatus.failed);
+  });
+
   test('status returns unknown when not loaded and no plist', () async {
     final notLoaded = MacOsLaunchdDriver(
       processRunner: FakeProcessRunner(

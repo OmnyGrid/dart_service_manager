@@ -266,11 +266,17 @@ final class MacOsLaunchdDriver implements PlatformServiceDriver {
     final exitMatch = RegExp(
       r'"LastExitStatus"\s*=\s*(\d+)',
     ).firstMatch(output);
-    if (exitMatch != null && int.parse(exitMatch.group(1)!) != 0) {
-      return ServiceStatus.failed;
-    }
-    return ServiceStatus.stopped;
+    if (exitMatch == null) return ServiceStatus.stopped;
+    // A raw waitpid status: `code << 8` for an exit, the signal number in the
+    // low 7 bits for a kill. SIGTERM is how `launchctl stop` ends the service,
+    // so a clean stop reads 15 — not a failure.
+    final raw = int.parse(exitMatch.group(1)!);
+    if (raw == 0 || (raw & 0x7f) == _sigterm) return ServiceStatus.stopped;
+    return ServiceStatus.failed;
   }
+
+  /// The signal `launchctl stop`/`unload` sends to end a service.
+  static const _sigterm = 15;
 
   String _agentsDirectory(ServiceScope scope) {
     if (scope == ServiceScope.system) return '/Library/LaunchDaemons';

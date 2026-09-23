@@ -304,6 +304,120 @@ dart_services:
     },
   );
 
+  test('a JIT install records the command apart from the script', () async {
+    const snapshot = '/cache/api.dart-3.11.0.snapshot';
+    await manager.installDescriptor(
+      ServiceDescriptor(
+        packageName: 'svc',
+        serviceName: 'api',
+        executablePath: '/opt/dart-sdk/bin/dart',
+        arguments: [snapshot, 'hub', 'start'],
+        scriptPath: snapshot,
+      ),
+    );
+    // The driver still runs the full `dart <snapshot> hub start`.
+    expect(driver.installed.single.arguments, [snapshot, 'hub', 'start']);
+    final info = await manager.describe('svc', 'api');
+    expect(info.entry.scriptPath, snapshot);
+    expect(info.entry.arguments, ['hub', 'start']);
+
+    // Reinstalling from the recorded command under an AOT build of the same
+    // tool must not carry the old snapshot over.
+    final resolved = ServiceDescriptor.resolveSelfExecutable(
+      resolvedExecutable: '/opt/bin/api',
+      script: '/opt/bin/api',
+      arguments: info.entry.arguments,
+    );
+    await manager.reinstall(
+      ServiceDescriptor(
+        packageName: 'svc',
+        serviceName: 'api',
+        executablePath: resolved.executable,
+        arguments: resolved.arguments,
+        scriptPath: resolved.script,
+      ),
+    );
+    expect(driver.installed.last.executablePath, '/opt/bin/api');
+    expect(driver.installed.last.arguments, ['hub', 'start']);
+    final entry = (await registry.find('svc', 'api'))!;
+    expect(entry.scriptPath, isNull);
+    expect(entry.arguments, ['hub', 'start']);
+  });
+
+  group('an entry recorded by 1.3.x (script inside args)', () {
+    const snapshot = '/cache/api.dart-3.11.0.snapshot';
+
+    setUp(() async {
+      await registry.upsert(
+        RegistryEntry.fromJson({
+          'package': 'svc',
+          'service': 'api',
+          'platform': 'linux',
+          'binary': '/opt/dart-sdk/bin/dart',
+          'installedAt': DateTime.utc(2026).toIso8601String(),
+          'status': 'running',
+          'args': [snapshot, 'hub', 'start'],
+        }),
+      );
+    });
+
+    test('drives lifecycle with the full command line', () async {
+      await manager.start('svc', 'api');
+      await manager.stop('svc', 'api');
+      await manager.status('svc', 'api');
+      await manager.uninstall('svc', serviceName: 'api');
+      for (final verb in ['start', 'stop', 'uninstall']) {
+        final d = driver.received[verb]!.single;
+        expect(d.executablePath, '/opt/dart-sdk/bin/dart', reason: verb);
+        expect(d.arguments, [snapshot, 'hub', 'start'], reason: verb);
+        expect(d.scriptPath, snapshot, reason: verb);
+      }
+    });
+
+    test('reports the command apart from the script', () async {
+      final info = await manager.describe('svc', 'api');
+      expect(info.entry.scriptPath, snapshot);
+      expect(info.entry.arguments, ['hub', 'start']);
+      expect(info.entry.commandLine, [snapshot, 'hub', 'start']);
+    });
+
+    test('reinstall tears down the old command line', () async {
+      await manager.reinstall(descriptor());
+      final removed = driver.received['uninstall']!.single;
+      expect(removed.arguments, [snapshot, 'hub', 'start']);
+      expect(driver.installed.single.arguments, ['--port', '8080']);
+    });
+  });
+
+  test('reinstall proceeds when the OS already lost the service', () async {
+    await manager.installDescriptor(descriptor());
+    driver.uninstallNotFound = true;
+    await manager.reinstall(
+      descriptor().copyWith(arguments: ['--port', '9090']),
+      startNow: false,
+    );
+    expect(driver.installed.last.arguments, ['--port', '9090']);
+    expect((await registry.find('svc', 'api'))!.arguments, ['--port', '9090']);
+    expect(driver.operations, isNot(contains('start:svc:api')));
+  });
+
+  test('reconfigure of a Dart VM install keeps the script split', () async {
+    const script = '/proj/bin/main.dart';
+    ServiceDescriptor vm(List<String> command) => ServiceDescriptor(
+      packageName: 'svc',
+      serviceName: 'api',
+      executablePath: '/opt/dart-sdk/bin/dart',
+      arguments: [script, ...command],
+      scriptPath: script,
+    );
+    await manager.installDescriptor(vm(['hub', 'start']));
+    await manager.reconfigure(vm(['hub', 'start', '-v']));
+    final entry = (await registry.find('svc', 'api'))!;
+    expect(entry.scriptPath, script);
+    expect(entry.arguments, ['hub', 'start', '-v']);
+    expect(driver.installed.last.arguments, [script, 'hub', 'start', '-v']);
+  });
+
   test('installDescriptor rejects an already-installed service', () async {
     await manager.installDescriptor(descriptor());
     expect(

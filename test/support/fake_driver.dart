@@ -19,6 +19,14 @@ class FakeServiceDriver implements PlatformServiceDriver {
   /// full descriptor (args/env/policy) reached the driver.
   final List<ServiceDescriptor> installed = [];
 
+  /// The descriptor passed to each operation, keyed by verb (`install`,
+  /// `start`, `uninstall`, …), most recent last.
+  final Map<String, List<ServiceDescriptor>> received = {};
+
+  /// When `true`, [uninstall] throws a [ServiceNotFoundException], as a driver
+  /// does when the OS no longer knows the service.
+  bool uninstallNotFound;
+
   /// The status returned by [status], keyed by qualified service name.
   final Map<String, ServiceStatus> statuses = {};
 
@@ -35,10 +43,13 @@ class FakeServiceDriver implements PlatformServiceDriver {
     this.supportsEnvironmentFile = false,
     this.defaultStatus = ServiceStatus.running,
     this.throwOnStatus = false,
+    this.uninstallNotFound = false,
   });
 
-  void _record(String verb, ServiceDescriptor s) =>
-      operations.add('$verb:${s.qualifiedName}');
+  void _record(String verb, ServiceDescriptor s) {
+    operations.add('$verb:${s.qualifiedName}');
+    (received[verb] ??= []).add(s);
+  }
 
   @override
   String render(ServiceDescriptor service) => 'rendered:${service.systemName}';
@@ -50,8 +61,12 @@ class FakeServiceDriver implements PlatformServiceDriver {
   }
 
   @override
-  Future<void> uninstall(ServiceDescriptor service) async =>
-      _record('uninstall', service);
+  Future<void> uninstall(ServiceDescriptor service) async {
+    _record('uninstall', service);
+    if (uninstallNotFound) {
+      throw ServiceNotFoundException('${service.qualifiedName} is gone');
+    }
+  }
 
   @override
   Future<void> start(ServiceDescriptor service) async =>

@@ -4,14 +4,25 @@
 # pubspec.yaml (test/unit/version_test.dart).
 #
 # The `os-linux`, `os-macos` and `os-windows` tags mark tests that drive the
-# real init system (systemd/launchd/SCM) and therefore only run on a matching
-# host. They are skipped by default; run them explicitly with, e.g.,
-# `dart test -t os-macos`.
+# host's real init system (systemd/launchd/SCM), installing and removing
+# services for the current user. They are skipped by default; the `host` preset
+# runs them, e.g. `dart test -P host test/integration/host_service_test.dart`.
+# (`-t os-macos` alone only selects them — the tag's skip still applies.)
 tags:
   version:
   os-linux:
-    skip: 'requires a real systemd host; run with -t os-linux'
+    skip: 'drives the real systemd; run with -P host'
   os-macos:
-    skip: 'requires a real launchd host; run with -t os-macos'
+    skip: 'drives the real launchd; run with -P host'
   os-windows:
-    skip: 'requires a real Windows SCM host; run with -t os-windows'
+    skip: 'drives the real Windows SCM; run with -P host'
+
+presets:
+  host:
+    tags:
+      os-linux:
+        skip: false
+      os-macos:
+        skip: false
+      os-windows:
+        skip: false

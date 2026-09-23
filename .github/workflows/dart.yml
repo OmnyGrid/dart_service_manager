@@ -32,7 +32,7 @@ jobs:
   # The full suite runs on all three target platforms. Every driver test uses a
   # fake process runner, so the systemd/launchd/SCM logic is validated on each
   # OS without touching a real init system; the platform-tagged
-  # (os-linux/os-macos/os-windows) tests remain skipped by default.
+  # (os-linux/os-macos/os-windows) tests are skipped here and run in `host`.
   test:
     strategy:
       fail-fast: false
@@ -48,6 +48,37 @@ jobs:
         run: dart pub get
       - name: Run tests
         run: dart test --platform vm
+
+  # The platform-tagged tests against the runner's real init system: user-scope
+  # services under systemd --user (Linux) and launchd agents (macOS), installed,
+  # driven and removed by test/integration/host_service_test.dart.
+  host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dart-lang/setup-dart@v1
+      - name: Install dependencies
+        run: dart pub get
+      # The runner has no login session, so no systemd --user manager. Lingering
+      # starts one; point systemctl --user at its runtime dir and bus.
+      - name: Start a systemd user manager
+        if: runner.os == 'Linux'
+        run: |
+          sudo loginctl enable-linger "$USER"
+          runtime="/run/user/$(id -u)"
+          for _ in $(seq 1 30); do
+            [ -S "$runtime/bus" ] && break
+            sleep 1
+          done
+          echo "XDG_RUNTIME_DIR=$runtime" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime/bus" >> "$GITHUB_ENV"
+          XDG_RUNTIME_DIR="$runtime" systemctl --user is-system-running --wait || true
+      - name: Run host integration tests
+        run: dart test -P host --reporter expanded test/integration/host_service_test.dart
 
   # Coverage is collected once, on Linux, and uploaded to Codecov.
   coverage:
